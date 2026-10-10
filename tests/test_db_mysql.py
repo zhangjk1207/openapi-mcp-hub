@@ -23,6 +23,21 @@ pytestmark = pytest.mark.skipif(
 if DSN:
     os.environ["OMH_MYSQL_URL"] = DSN
 
+from urllib.parse import unquote, urlparse
+
+
+def _dsn_parts():
+    """从 OMH_MYSQL_TEST_DSN 解析连接参数（host/port/user/password/db）。"""
+    u = urlparse(DSN)
+    return {
+        "host": u.hostname or "127.0.0.1",
+        "port": u.port or 3306,
+        "user": u.username or "root",
+        "password": unquote(u.password or ""),
+        "db": (u.path or "/").lstrip("/") or "test",
+    }
+
+
 from openapi_mcp_hub.config import GatewayConfig  # noqa: E402
 from openapi_mcp_hub.main import create_app  # noqa: E402
 from openapi_mcp_hub.models import ServiceRegistration  # noqa: E402
@@ -36,10 +51,7 @@ def toy_tables():
     async def setup():
         import aiomysql
 
-        conn = await aiomysql.connect(
-            host="127.0.0.1", port=33061, user="root",
-            password="a2m-test-pass", db="a2m_test", charset="utf8mb4",
-        )
+        conn = await aiomysql.connect(**_dsn_parts(), charset="utf8mb4")
         cur = await conn.cursor()
         await cur.execute("DROP TABLE IF EXISTS a2m_orders, a2m_toys")
         await cur.execute(
