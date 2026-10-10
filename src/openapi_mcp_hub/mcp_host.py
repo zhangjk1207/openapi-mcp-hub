@@ -36,6 +36,7 @@ from mcp.types import (
 
 from . import __version__
 from .invoker import Invoker
+from .db import DbExecutor
 from .models import ToolDef
 from .templates import render_response
 
@@ -53,7 +54,7 @@ class McpServiceApp:
         invoker: Invoker | None = None,
         *,
         allowed_tools: list[str] | None = None,
-        db_executor: "DbExecutor | None" = None,
+        db_executor: DbExecutor | None = None,
     ):
         self.name = name
         self.title = title

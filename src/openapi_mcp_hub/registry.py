@@ -4,26 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import logging
 import os
 import secrets
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from urllib.parse import urlparse
 from typing import Any
 
 import httpx
 
 from .config import GatewayConfig, TargetNotAllowed
-from .db import DbExecutor, dsn_safe_display  # noqa: F401（类型引用）
+from .db import DbExecutor, dsn_safe_display
 from .errors import RegistrationError, ServiceConflictError, ServiceNotFoundError, SpecError
 from .extractor import extract_endpoints
 from .generator import generate_tools
 from .invoker import Invoker, ServiceHttpConfig, apply_auth
-from .loader import load_spec, normalize_spec, parse_spec_text, resolve_spec
+from .loader import load_spec, normalize_spec, parse_spec_text
 from .mcp_host import McpHost, McpServiceApp
 from .models import AuthConfig, Filters, ServiceRegistration, ToolDef
 from .store import FileStore, Store
@@ -50,7 +48,7 @@ class RunningService:
     tools: list[ToolDef]
     app: McpServiceApp
     invoker: Invoker | None = None          # REST 源
-    db_executor: "DbExecutor | None" = None  # DB 源（M5）
+    db_executor: DbExecutor | None = None  # DB 源（M5）
 
     def summary(self) -> dict[str, Any]:
         db_cfg = self.record.get("db")

@@ -6,7 +6,7 @@ import json
 import pytest
 
 from openapi_mcp_hub.config import GatewayConfig
-from openapi_mcp_hub.errors import RegistrationError, ServiceConflictError
+from openapi_mcp_hub.errors import ServiceNotFoundError, RegistrationError, ServiceConflictError
 from openapi_mcp_hub.mcp_host import McpHost
 from openapi_mcp_hub.registry import Registry
 
@@ -65,7 +65,7 @@ async def test_remove(gateway_cfg):
     await reg.remove("petstore")
     assert not (gateway_cfg.data_dir / "services" / "petstore.json").exists()
     assert reg.list_services() == []
-    with pytest.raises(Exception):
+    with pytest.raises(ServiceNotFoundError):
         reg.get("petstore")
     await reg.shutdown()
 

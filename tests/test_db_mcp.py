@@ -362,10 +362,7 @@ async def test_register_rollback_when_store_fails(gateway_cfg, monkeypatch):
     """持久化失败：注册回滚（内存不留半激活服务），错误信息可诊断。"""
     from openapi_mcp_hub.config import GatewayConfig as GC
     from openapi_mcp_hub.main import create_app
-    import openapi_mcp_hub.registry as reg_mod
 
-    import httpx as _hx
-    from httpx import ASGITransport as _T
 
     app = create_app(GC(admin_token="t", data_dir=gateway_cfg.data_dir))
     reg = app.state.registry

@@ -8,7 +8,6 @@ import pytest
 from httpx import ASGITransport
 
 from openapi_mcp_hub.main import create_app
-from openapi_mcp_hub.models import SERVICE_NAME_PATTERN
 
 from .conftest import PETSTORE_SPEC, make_registration
 
@@ -254,7 +253,7 @@ class TestCallsLog:
         svc = reg.get("petstore")
 
         from openapi_mcp_hub.mcp_host import CallToolRequestParams
-        from openapi_mcp_hub.models import ApiBody, ApiEndpoint, ApiParam, ParamLocation, ToolDef
+        from openapi_mcp_hub.models import ApiEndpoint, ApiParam, ParamLocation, ToolDef
 
         ep = ApiEndpoint(method="get", path="/pets/{petId}", operation_id="getPetById",
                          params=[ApiParam("petId", ParamLocation.path, required=True,

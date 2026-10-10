@@ -4,7 +4,6 @@ import base64
 import json
 
 import httpx
-import pytest
 import respx
 
 from openapi_mcp_hub.invoker import Invoker, ServiceHttpConfig

@@ -7,7 +7,7 @@ from typing import Any
 
 from .config import DEFAULT_MAX_TOOLS
 from .errors import RegistrationError
-from .models import ApiEndpoint, ApiParam, ParamLocation, ToolDef
+from .models import ApiEndpoint, ParamLocation, ToolDef
 
 _MAX_NAME_LEN = 64
 # MCP 工具名建议字符集

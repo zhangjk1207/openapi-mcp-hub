@@ -20,7 +20,6 @@ async def test_api_routes_not_shadowed(gateway):
     """静态挂载在 / 之后：API 路径仍走 API（列表/健康/docs）。"""
     assert (await gateway.get("/healthz")).status_code == 200
     # 未带 token 的管理面仍 401（不被静态页吞掉）
-    import httpx as _hx
 
     raw = httpx.AsyncClient(transport=ASGITransport(app=gateway._transport.app), base_url="http://t")
     resp = await raw.get("/services")

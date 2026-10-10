@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check src tests
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: hub
+          POSTGRES_PASSWORD: hub
+          POSTGRES_DB: hub_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hub"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: hub
+          MYSQL_DATABASE: hub_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -phub"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      OMH_PG_TEST_DSN: postgresql://hub:hub@127.0.0.1:5432/hub_test
+      OMH_MYSQL_TEST_DSN: mysql://root:hub@127.0.0.1:3306/hub_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest tests/ -q
