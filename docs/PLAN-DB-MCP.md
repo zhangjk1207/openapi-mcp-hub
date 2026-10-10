@@ -97,7 +97,7 @@ POST /services
 
 | 阶段 | 内容 | 预估 |
 |---|---|---|
-| **M5-1（MVP）** | pg 只读：注册（db 源）→ 内省 → 通用三件套工具 → 六层安全 → 落盘恢复/health/calls 全复用；集成测试用 api_to_mcp_test 库建玩具表 | 1.5~2 天 |
+| **M5-1（MVP）** | pg 只读：注册（db 源）→ 内省 → 通用三件套工具 → 六层安全 → 落盘恢复/health/calls 全复用；集成测试用 openapi_mcp_hub_test 库建玩具表 | 1.5~2 天 |
 | **M5-2** | `per_table` 表级工具模式（含 include/exclude/上限熔断）；视图支持；describe 结果注入 query 工具 description | 0.5~1 天 |
 | **M5-3** | 写模式评估（默认关，白名单表 + `confirm` 必填参数 + 影响行数预览）；MySQL（SQLAlchemy 统一抽象，成本另评） | 另立规划 |
 | **M5-4** | schema 漂移检测（表结构变了自动刷新工具 description，目前需 PUT 重注册）；PG 函数暴露为工具 | 按需 |

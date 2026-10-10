@@ -7,8 +7,8 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
-from api_to_mcp.main import create_app
-from api_to_mcp.models import SERVICE_NAME_PATTERN
+from openapi_mcp_hub.main import create_app
+from openapi_mcp_hub.models import SERVICE_NAME_PATTERN
 
 from .conftest import PETSTORE_SPEC, make_registration
 
@@ -28,7 +28,7 @@ def _auth_headers(token: str = "test-admin-token") -> dict:
 
 class TestAuth:
     async def test_no_token_configured_returns_503(self, tmp_path):
-        from api_to_mcp.config import GatewayConfig
+        from openapi_mcp_hub.config import GatewayConfig
 
         app = create_app(GatewayConfig(admin_token=None, data_dir=tmp_path))
         async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
@@ -253,8 +253,8 @@ class TestCallsLog:
         await client.post("/services", json=make_registration().model_dump(), headers=headers)
         svc = reg.get("petstore")
 
-        from api_to_mcp.mcp_host import CallToolRequestParams
-        from api_to_mcp.models import ApiBody, ApiEndpoint, ApiParam, ParamLocation, ToolDef
+        from openapi_mcp_hub.mcp_host import CallToolRequestParams
+        from openapi_mcp_hub.models import ApiBody, ApiEndpoint, ApiParam, ParamLocation, ToolDef
 
         ep = ApiEndpoint(method="get", path="/pets/{petId}", operation_id="getPetById",
                          params=[ApiParam("petId", ParamLocation.path, required=True,

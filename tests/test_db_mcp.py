@@ -1,6 +1,6 @@
-"""DB → MCP（M5-1）集成测试：需要真实 PostgreSQL（A2M_PG_TEST_DSN 指向专用测试库）。
+"""DB → MCP（M5-1）集成测试：需要真实 PostgreSQL（OMH_PG_TEST_DSN 指向专用测试库）。
 
-    A2M_PG_TEST_DSN='postgresql://user:pass@host:port/api_to_mcp_test' \
+    OMH_PG_TEST_DSN='postgresql://user:pass@host:port/openapi_mcp_hub_test' \
         pytest tests/test_db_mcp.py
 
 未配置时自动跳过。测试在目标库 public schema 下建/删 a2m_* 玩具表。
@@ -14,19 +14,19 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
-from api_to_mcp.config import GatewayConfig
-from api_to_mcp.main import create_app
-from api_to_mcp.models import ServiceRegistration
+from openapi_mcp_hub.config import GatewayConfig
+from openapi_mcp_hub.main import create_app
+from openapi_mcp_hub.models import ServiceRegistration
 
-DSN = os.environ.get("A2M_PG_TEST_DSN", "")
+DSN = os.environ.get("OMH_PG_TEST_DSN", "")
 
 pytestmark = pytest.mark.skipif(
-    not DSN, reason="未配置 A2M_PG_TEST_DSN，跳过 db→mcp 集成测试"
+    not DSN, reason="未配置 OMH_PG_TEST_DSN，跳过 db→mcp 集成测试"
 )
 
 # e2e 走本进程 env：测试库 DSN 作为演示服务的目标库
 if DSN:
-    os.environ["A2M_TEST_DB_URL"] = DSN
+    os.environ["OMH_TEST_DB_URL"] = DSN
 
 
 
@@ -95,7 +95,7 @@ async def test_register_db_service_and_tools(toy_tables, gateway):
     """注册 db 源 → 三件套工具，list_tables 返回内省结果。"""
     reg = {
         "name": "toys-db",
-        "db": {"url_env": "A2M_TEST_DB_URL"},
+        "db": {"url_env": "OMH_TEST_DB_URL"},
         "owner": "db-test",
     }
     resp = await gateway.post("/services", json=reg)
@@ -121,10 +121,10 @@ async def test_register_db_service_and_tools(toy_tables, gateway):
 async def test_register_requires_env(toy_tables, gateway):
     """url_env 未配置 → 422，错误信息含变量名。"""
     resp = await gateway.post(
-        "/services", json={"name": "bad-db", "db": {"url_env": "A2M_NOPE_URL"}}
+        "/services", json={"name": "bad-db", "db": {"url_env": "OMH_NOPE_URL"}}
     )
     assert resp.status_code == 422
-    assert "A2M_NOPE_URL" in resp.json()["detail"]["message"]
+    assert "OMH_NOPE_URL" in resp.json()["detail"]["message"]
 
 
 async def test_register_spec_xor_db(gateway):
@@ -133,7 +133,7 @@ async def test_register_spec_xor_db(gateway):
         json={
             "name": "both",
             "spec": {"openapi": "3.0.0", "info": {"title": "t", "version": "1"}, "paths": {}},
-            "db": {"url_env": "A2M_TEST_DB_URL"},
+            "db": {"url_env": "OMH_TEST_DB_URL"},
         },
     )
     assert resp.status_code == 422
@@ -171,7 +171,7 @@ async def _delete(gateway, name):
 async def test_mcp_full_flow(toy_tables, gateway):
     """全链路：注册 → tools/list → list_tables → describe_table → query。"""
     reg = await gateway.post(
-        "/services", json={"name": "toys-db", "db": {"url_env": "A2M_TEST_DB_URL"}}
+        "/services", json={"name": "toys-db", "db": {"url_env": "OMH_TEST_DB_URL"}}
     )
     key = reg.json()["api_key"]
 
@@ -212,7 +212,7 @@ async def test_mcp_full_flow(toy_tables, gateway):
 async def test_readonly_guards(toy_tables, gateway):
     """写语句 / 多语句 / 注释 → 全部词法拦截（-32602），错误信息可指导 LLM 改写。"""
     reg = await gateway.post(
-        "/services", json={"name": "toys-db", "db": {"url_env": "A2M_TEST_DB_URL"}}
+        "/services", json={"name": "toys-db", "db": {"url_env": "OMH_TEST_DB_URL"}}
     )
     key = reg.json()["api_key"]
 
@@ -248,7 +248,7 @@ async def test_row_limit_truncation(toy_tables, gateway):
         "/services",
         json={
             "name": "toys-db",
-            "db": {"url_env": "A2M_TEST_DB_URL", "max_rows": 3},
+            "db": {"url_env": "OMH_TEST_DB_URL", "max_rows": 3},
         },
     )
     key = reg.json()["api_key"]
@@ -266,7 +266,7 @@ async def test_exclude_tables(toy_tables, gateway):
         "/services",
         json={
             "name": "toys-db",
-            "db": {"url_env": "A2M_TEST_DB_URL", "exclude_tables": ["a2m_orders*"]},
+            "db": {"url_env": "OMH_TEST_DB_URL", "exclude_tables": ["a2m_orders*"]},
         },
     )
     key = reg.json()["api_key"]
@@ -290,7 +290,7 @@ async def test_persistence_and_recovery(toy_tables, tmp_path):
     reg1 = app1.state.registry
     await reg1.connect_store()
     _, key, _ = await reg1.register(
-        ServiceRegistration(name="toys-db", db={"url_env": "A2M_TEST_DB_URL", "max_rows": 3})
+        ServiceRegistration(name="toys-db", db={"url_env": "OMH_TEST_DB_URL", "max_rows": 3})
     )
     rec = reg1.get("toys-db").record
     assert rec["db"]["max_rows"] == 3  # db 配置完整落盘
@@ -324,7 +324,7 @@ async def test_persistence_and_recovery(toy_tables, tmp_path):
 
 async def test_health_db(toy_tables, gateway):
     reg = await gateway.post(
-        "/services", json={"name": "toys-db", "db": {"url_env": "A2M_TEST_DB_URL"}}
+        "/services", json={"name": "toys-db", "db": {"url_env": "OMH_TEST_DB_URL"}}
     )
     assert reg.status_code == 201
     h = (await gateway.get("/services/toys-db/health")).json()
@@ -341,7 +341,7 @@ async def test_health_db(toy_tables, gateway):
 async def test_sql_literal_not_misjudged(toy_tables, gateway):
     """字符串字面量里的 -- / ; / /* 不再被误拦（词法扫描跳过字面量）。"""
     reg = await gateway.post(
-        "/services", json={"name": "toys-db", "db": {"url_env": "A2M_TEST_DB_URL"}}
+        "/services", json={"name": "toys-db", "db": {"url_env": "OMH_TEST_DB_URL"}}
     )
     key = reg.json()["api_key"]
     # 注释列名（col_description 为"名称"）无 -- 场景，用字面量构造
@@ -360,9 +360,9 @@ async def test_sql_literal_not_misjudged(toy_tables, gateway):
 
 async def test_register_rollback_when_store_fails(gateway_cfg, monkeypatch):
     """持久化失败：注册回滚（内存不留半激活服务），错误信息可诊断。"""
-    from api_to_mcp.config import GatewayConfig as GC
-    from api_to_mcp.main import create_app
-    import api_to_mcp.registry as reg_mod
+    from openapi_mcp_hub.config import GatewayConfig as GC
+    from openapi_mcp_hub.main import create_app
+    import openapi_mcp_hub.registry as reg_mod
 
     import httpx as _hx
     from httpx import ASGITransport as _T
@@ -376,9 +376,9 @@ async def test_register_rollback_when_store_fails(gateway_cfg, monkeypatch):
 
     monkeypatch.setattr(reg._store, "save", boom)
     import os as _os
-    _os.environ["A2M_TEST_DB_URL"] = "postgresql://x/y"
-    from api_to_mcp.models import ServiceRegistration as SR
-    from api_to_mcp.errors import RegistrationError
+    _os.environ["OMH_TEST_DB_URL"] = "postgresql://x/y"
+    from openapi_mcp_hub.models import ServiceRegistration as SR
+    from openapi_mcp_hub.errors import RegistrationError
 
     # spec 为空即可触发构建前校验，用一个最小合法 spec 走完整注册路径
     spec = {"openapi": "3.0.0", "info": {"title": "t", "version": "1"},

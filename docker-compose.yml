@@ -1,12 +1,12 @@
 services:
   gateway:
     build: .
-    image: api-to-mcp:latest
+    image: openapi-mcp-hub:latest
     ports:
       - "20033:20033"
     environment:
       # 管理面静态 token（必填；不设则管理面 503）
-      API_TO_MCP_ADMIN_TOKEN: ${API_TO_MCP_ADMIN_TOKEN:?请先 export API_TO_MCP_ADMIN_TOKEN=...}
+      OPENAPI_MCP_HUB_ADMIN_TOKEN: ${OPENAPI_MCP_HUB_ADMIN_TOKEN:?请先 export OPENAPI_MCP_HUB_ADMIN_TOKEN=...}
       # 目标 API 凭证按各服务注册时的 *_env 名注入，例如：
       # GRANDE_TOKEN: xxx
       # DEMO_PETSTORE_TOKEN: demo-secret-token
@@ -17,7 +17,7 @@ services:
   # 可选：petstore 演示目标 API（真实使用时删掉本段）
   petstore-mock:
     build: .
-    image: api-to-mcp:latest
+    image: openapi-mcp-hub:latest
     command: ["python", "demo/petstore_mock.py"]
     ports:
       - "20034:20034"

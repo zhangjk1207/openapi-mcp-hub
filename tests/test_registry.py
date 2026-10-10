@@ -5,10 +5,10 @@ import json
 
 import pytest
 
-from api_to_mcp.config import GatewayConfig
-from api_to_mcp.errors import RegistrationError, ServiceConflictError
-from api_to_mcp.mcp_host import McpHost
-from api_to_mcp.registry import Registry
+from openapi_mcp_hub.config import GatewayConfig
+from openapi_mcp_hub.errors import RegistrationError, ServiceConflictError
+from openapi_mcp_hub.mcp_host import McpHost
+from openapi_mcp_hub.registry import Registry
 
 from .conftest import make_registration
 
@@ -160,7 +160,7 @@ async def test_allowed_tools_persisted_and_restored(gateway_cfg):
     result = await svc.app._on_list_tools(None, None)
     assert [t.name for t in result.tools] == ["get_pet_by_id"]
     # call 层拒绝白名单外工具
-    from api_to_mcp.mcp_host import CallToolRequestParams
+    from openapi_mcp_hub.mcp_host import CallToolRequestParams
 
     out = await svc.app._on_call_tool(
         None, CallToolRequestParams(name="list_pets", arguments={})
@@ -180,7 +180,7 @@ async def test_allowed_tools_persisted_and_restored(gateway_cfg):
 
 async def test_schema_defaults_filled_for_missing_args(gateway_cfg):
     """LLM 未传的可选参数填上 schema default（Unla fillDefaultArgs 语义）。"""
-    from api_to_mcp.mcp_host import CallToolRequestParams
+    from openapi_mcp_hub.mcp_host import CallToolRequestParams
 
     host = McpHost()
     reg = Registry(gateway_cfg, host)

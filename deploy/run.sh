@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 常驻启动 api-to-mcp 网关（默认 0.0.0.0:20033）
+# 常驻启动 openapi-mcp-hub 网关（默认 0.0.0.0:20033）
 #
 # 用法：
 #   nohup deploy/run.sh >/dev/null 2>&1 &     # 后台常驻
@@ -36,9 +36,9 @@ fi
 echo "[$(date '+%F %T')] 启动网关 admin_token=$ADMIN_TOKEN" >> logs/gateway.log
 
 exec env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
-    API_TO_MCP_ADMIN_TOKEN="$ADMIN_TOKEN" \
-    API_TO_MCP_DATA_DIR="$PWD/data" \
-    API_TO_MCP_HOST="${API_TO_MCP_HOST:-0.0.0.0}" \
-    API_TO_MCP_PORT="${API_TO_MCP_PORT:-20033}" \
+    OPENAPI_MCP_HUB_ADMIN_TOKEN="$ADMIN_TOKEN" \
+    OPENAPI_MCP_HUB_DATA_DIR="$PWD/data" \
+    OPENAPI_MCP_HUB_HOST="${OPENAPI_MCP_HUB_HOST:-0.0.0.0}" \
+    OPENAPI_MCP_HUB_PORT="${OPENAPI_MCP_HUB_PORT:-20033}" \
     PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}" \
-    .venv/bin/python -m api_to_mcp >> logs/gateway.log 2>&1
+    .venv/bin/python -m openapi_mcp_hub >> logs/gateway.log 2>&1

@@ -7,8 +7,8 @@ import httpx
 import pytest
 import respx
 
-from api_to_mcp.invoker import Invoker, ServiceHttpConfig
-from api_to_mcp.models import ApiBody, ApiEndpoint, ApiParam, ParamLocation, ToolDef
+from openapi_mcp_hub.invoker import Invoker, ServiceHttpConfig
+from openapi_mcp_hub.models import ApiBody, ApiEndpoint, ApiParam, ParamLocation, ToolDef
 
 BASE = "http://target.test"
 
@@ -147,7 +147,7 @@ class TestAuth:
         monkeypatch.setenv("TOK", "tok-123")
         route = respx.get(f"{BASE}/pets/1").mock(return_value=httpx.Response(200, json={}))
         tool = _tool(params=[ApiParam("petId", ParamLocation.path, required=True)])
-        from api_to_mcp.models import AuthConfig
+        from openapi_mcp_hub.models import AuthConfig
 
         inv = Invoker(ServiceHttpConfig(BASE, AuthConfig(type="bearer", token_env="TOK")))
         result = await inv.invoke(tool, {"petId": 1})
@@ -156,7 +156,7 @@ class TestAuth:
 
     async def test_bearer_env_missing(self, monkeypatch):
         monkeypatch.delenv("NOPE_TOK", raising=False)
-        from api_to_mcp.models import AuthConfig
+        from openapi_mcp_hub.models import AuthConfig
 
         inv = Invoker(ServiceHttpConfig(BASE, AuthConfig(type="bearer", token_env="NOPE_TOK")))
         result = await inv.invoke(_tool(params=[ApiParam("petId", ParamLocation.path, required=True)]), {"petId": 1})
@@ -165,7 +165,7 @@ class TestAuth:
     @respx.mock
     async def test_api_key_header_and_query(self, monkeypatch):
         monkeypatch.setenv("AK", "ak-1")
-        from api_to_mcp.models import AuthConfig
+        from openapi_mcp_hub.models import AuthConfig
 
         route = respx.get(f"{BASE}/pets/1").mock(return_value=httpx.Response(200, json={}))
         tool = _tool(params=[ApiParam("petId", ParamLocation.path, required=True)])
@@ -190,7 +190,7 @@ class TestAuth:
     async def test_basic_auth(self, monkeypatch):
         monkeypatch.setenv("U", "user1")
         monkeypatch.setenv("P", "pass1")
-        from api_to_mcp.models import AuthConfig
+        from openapi_mcp_hub.models import AuthConfig
 
         route = respx.get(f"{BASE}/pets/1").mock(return_value=httpx.Response(200, json={}))
         tool = _tool(params=[ApiParam("petId", ParamLocation.path, required=True)])

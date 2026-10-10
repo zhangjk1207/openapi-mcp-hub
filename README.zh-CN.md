@@ -1,4 +1,4 @@
-# api-to-mcp
+# openapi-mcp-hub
 
 **OpenAPI → MCP 网关**：起一个服务（如 `localhost:20033`），向它 POST 一份 `openapi.json`，立刻得到一个可直接接入 agent 的 MCP 端点 —— `http://localhost:20033/mcp/{service-name}`。
 
@@ -55,12 +55,12 @@
 
 ```bash
 # ① 启动网关（一次）
-export API_TO_MCP_ADMIN_TOKEN=<管理token>
-python -m api_to_mcp          # 监听 0.0.0.0:20033（API_TO_MCP_HOST/PORT 可改；容器化见 M3）
+export OPENAPI_MCP_HUB_ADMIN_TOKEN=<管理token>
+python -m openapi_mcp_hub          # 监听 0.0.0.0:20033（OPENAPI_MCP_HUB_HOST/PORT 可改；容器化见 M3）
 
 # ② 注册一个服务：spec + 真实地址 + 凭证引用（注意：光有 openapi.json 不够）
 curl -X POST http://localhost:20033/services \
-  -H "Authorization: Bearer $API_TO_MCP_ADMIN_TOKEN" \
+  -H "Authorization: Bearer $OPENAPI_MCP_HUB_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d @examples/register-petstore.json
 
@@ -105,7 +105,7 @@ curl -s -X POST http://127.0.0.1:20033/services \
   -d @examples/register-petstore.json | python3 -m json.tool
 ```
 
-停止：`pkill -f 'api_to_mcp'`（网关）/ `pkill -f petstore_mock`（mock）；日志在 `logs/`。
+停止：`pkill -f 'openapi_mcp_hub'`（网关）/ `pkill -f petstore_mock`（mock）；日志在 `logs/`。
 
 ### 持久化：文件或 PostgreSQL
 
@@ -120,7 +120,7 @@ DEMO_PETSTORE_TOKEN=xxx nohup deploy/run.sh ...   # 重启即生效
 - **首次切换自动迁移**：pg 表为空且 data/services 有记录 → 导入（原文件保留，去掉 pg.env 重启即回滚到文件模式；
   注意迁移是单向的：pg 期间新注册的服务不回写文件，回滚会回到迁移时点）；
 - pg 不可达时网关启动失败退出（fail fast，由 supervisor/容器重启重试）；
-- 集成测试：`A2M_PG_TEST_DSN=... pytest tests/test_store_pg.py`（未配置自动跳过）。
+- 集成测试：`OMH_PG_TEST_DSN=... pytest tests/test_store_pg.py`（未配置自动跳过）。
 
 ### 数据库 → MCP（M5-1）：不用写接口，直接查库
 
@@ -149,16 +149,16 @@ curl -X POST http://localhost:20033/services -H "Authorization: Bearer $ADMIN_TO
 
 ```bash
 # 构建（内网环境用 host 网络直连清华 pypi 镜像）
-docker build --network host -t api-to-mcp:latest .
+docker build --network host -t openapi-mcp-hub:latest .
 
 # 运行（管理 token 与目标 API 凭证全部经 env 注入，凭证不落盘；data 卷持久化已注册服务）
 docker run -d --network host \
-  -e API_TO_MCP_ADMIN_TOKEN=$ADMIN_TOKEN \
+  -e OPENAPI_MCP_HUB_ADMIN_TOKEN=$ADMIN_TOKEN \
   -e GRANDE_TOKEN=xxx \   # 按各服务注册时的 *_env 名注入目标 API 凭证
-  -v $PWD/data:/app/data api-to-mcp:latest
+  -v $PWD/data:/app/data openapi-mcp-hub:latest
 
 # 或 docker compose（含可选 petstore 演示目标）
-API_TO_MCP_ADMIN_TOKEN=xxx docker compose up -d
+OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 ```
 
 镜像验证过的能力：容器内注册/数据卷重启恢复、health 凭证自检（缺 env 时 `auth_env_ok:false`）、streamable 与 SSE 双通道全链路。
@@ -167,7 +167,7 @@ API_TO_MCP_ADMIN_TOKEN=xxx docker compose up -d
 
 | 决策点 | 结论 | 说明 |
 |---|---|---|
-| 管理面鉴权 | 静态 admin token | `API_TO_MCP_ADMIN_TOKEN` 环境变量注入，内网场景够用 |
+| 管理面鉴权 | 静态 admin token | `OPENAPI_MCP_HUB_ADMIN_TOKEN` 环境变量注入，内网场景够用 |
 | 目标 API 凭证 | 网关代持 | 注册时只引用**环境变量名**（如 `GRANDE_TOKEN`），凭证永不落盘 |
 | 数据面鉴权 | 每服务独立 key | 注册时生成、仅返回一次、落盘存哈希、支持轮换；请求头 `X-Api-Key` |
 | 首批客户端 | Claude Code | 原生支持 Streamable HTTP；Cursor / Cline / LangGraph 同样可用；Claude Desktop 需 mcp-remote 桥（M4 提供模板） |
@@ -262,7 +262,7 @@ API_TO_MCP_ADMIN_TOKEN=xxx docker compose up -d
 
 **安全**：
 - 管理面 `Authorization: Bearer <admin-token>`；数据面 `X-Api-Key: <per-service-key>`；
-- 目标主机 allowlist（`API_TO_MCP_HOST_ALLOWLIST`），防 SSRF（M2 加固）：
+- 目标主机 allowlist（`OPENAPI_MCP_HUB_HOST_ALLOWLIST`），防 SSRF（M2 加固）：
   - IP 字面量与网段比对，`::ffff:10.0.0.1` 等 IPv4-mapped IPv6 先规范化再比对（防绕过/防误杀）；
   - 未列名域名在注册时做 **DNS 解析核验**：所有解析 IP 必须命中网段条目（防 DNS rebinding）；
   - spec_url 拉取不自动跟随重定向：逐跳跟随且每跳重新过 allowlist；invoker 显式 `follow_redirects=False`；
@@ -327,11 +327,11 @@ API_TO_MCP_ADMIN_TOKEN=xxx docker compose up -d
 ## 8. 项目结构（规划）
 
 ```
-api-to-mcp/
+openapi-mcp-hub/
 ├── README.md
 ├── pyproject.toml
 ├── docker-compose.yml          # 端口 20033 + data 卷
-├── src/api_to_mcp/
+├── src/openapi_mcp_hub/
 │   ├── main.py                 # FastAPI 入口、启动恢复
 │   ├── admin.py                # 管理面 /services CRUD
 │   ├── registry.py             # 注册表：读写锁 + 落盘 + 恢复
@@ -358,9 +358,9 @@ api-to-mcp/
 
 | 变量 | 说明 |
 |---|---|
-| `API_TO_MCP_ADMIN_TOKEN` | 管理面 token（必填） |
-| `API_TO_MCP_DATA_DIR` | 注册数据目录，默认 `./data` |
-| `API_TO_MCP_HOST_ALLOWLIST` | 允许转发的目标主机/网段，逗号分隔；空 = 不限制 |
+| `OPENAPI_MCP_HUB_ADMIN_TOKEN` | 管理面 token（必填） |
+| `OPENAPI_MCP_HUB_DATA_DIR` | 注册数据目录，默认 `./data` |
+| `OPENAPI_MCP_HUB_HOST_ALLOWLIST` | 允许转发的目标主机/网段，逗号分隔；空 = 不限制 |
 | 各服务凭证 | 由注册时的 `token_env` 引用，如 `GRANDE_TOKEN` |
 
 - 建议给网关一个内网域名（如 `mcp.internal.example`）：裸 IP 迁移时所有 agent 配置都得改。

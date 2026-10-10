@@ -1,4 +1,4 @@
-# api-to-mcp 使用指南
+# openapi-mcp-hub 使用指南
 
 > 面向两类人：**注册方**（有 REST API 想暴露给 agent 用）和**使用方**（想把工具接进 Claude Code 等 agent）。
 > 网关部署地址以下用 `http://localhost:20033` 演示，替换成你的实际地址。
@@ -160,7 +160,7 @@ curl -X POST http://localhost:20033/services -H "Authorization: Bearer $ADMIN_TO
 | 下线 | `DELETE /services/{name}`（落盘同步删除） |
 | 工具完整定义 | `GET /services/{name}/tools` |
 
-> 网关重启**自动恢复**全部已注册服务（文件后端 `data/services/*.json`；或 PostgreSQL，运维配 `API_TO_MCP_DATABASE_URL` 后生效），agent 侧 URL 与 key 不变。
+> 网关重启**自动恢复**全部已注册服务（文件后端 `data/services/*.json`；或 PostgreSQL，运维配 `OPENAPI_MCP_HUB_DATABASE_URL` 后生效），agent 侧 URL 与 key 不变。
 
 ---
 

@@ -38,13 +38,13 @@ def create_app(cfg: GatewayConfig | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         await registry.connect_store()  # pg 建表/自动迁移；失败则启动退出（fail fast）
         restored = await registry.load_from_store()
-        logger.info("api-to-mcp %s 就绪（恢复 %d 个服务）", __version__, len(restored))
+        logger.info("openapi-mcp-hub %s 就绪（恢复 %d 个服务）", __version__, len(restored))
         yield
         await registry.shutdown()
         await registry.close_store()
 
     app = FastAPI(
-        title="api-to-mcp",
+        title="openapi-mcp-hub",
         version=__version__,
         description="OpenAPI → MCP 网关：POST /services 注册 spec，即刻生成 /mcp/{name} 端点",
         lifespan=lifespan,
@@ -72,7 +72,7 @@ def create_app(cfg: GatewayConfig | None = None) -> FastAPI:
         @app.get("/", summary="网关信息")
         async def root() -> dict:
             return {
-                "service": "api-to-mcp",
+                "service": "openapi-mcp-hub",
                 "version": __version__,
                 "endpoints": {
                     "admin": "/services（Bearer admin token）",
@@ -86,7 +86,7 @@ def create_app(cfg: GatewayConfig | None = None) -> FastAPI:
     return app
 
 
-def main() -> None:  # console_script 入口：api-to-mcp
+def main() -> None:  # console_script 入口：openapi-mcp-hub
     import uvicorn
 
     logging.basicConfig(level=logging.INFO)

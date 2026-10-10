@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from api_to_mcp.config import GatewayConfig
-from api_to_mcp.models import ServiceRegistration
+from openapi_mcp_hub.config import GatewayConfig
+from openapi_mcp_hub.models import ServiceRegistration
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,7 +51,7 @@ async def gateway(gateway_cfg):
     import httpx
     from httpx import ASGITransport
 
-    from api_to_mcp.main import create_app
+    from openapi_mcp_hub.main import create_app
 
     app = create_app(gateway_cfg)
     await app.state.registry.connect_store()

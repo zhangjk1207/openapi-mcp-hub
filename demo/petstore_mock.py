@@ -15,7 +15,7 @@ import sys
 import uvicorn
 from fastapi import Body, FastAPI, Header, HTTPException
 
-app = FastAPI(title="Petstore Mock (api-to-mcp 演示目标 API)")
+app = FastAPI(title="Petstore Mock (openapi-mcp-hub 演示目标 API)")
 
 TOKEN = os.environ.get("DEMO_PETSTORE_TOKEN", "demo-secret-token")
 PETS: dict[int, dict] = {

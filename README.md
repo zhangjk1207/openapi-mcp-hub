@@ -1,8 +1,8 @@
-# api-to-mcp
+# openapi-mcp-hub
 
 **Turn any OpenAPI spec — or a live PostgreSQL / MySQL database — into production-ready MCP endpoints. One process. One port. Zero code.**
 
-[![CI](https://github.com/PLACEHOLDER/api-to-mcp/actions/workflows/ci.yml/badge.svg)](../../actions)
+[![CI](https://github.com/PLACEHOLDER/openapi-mcp-hub/actions/workflows/ci.yml/badge.svg)](../../actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-6e7bf4.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg)](pyproject.toml)
 [![中文文档](https://img.shields.io/badge/README-中文-red.svg)](README.zh-CN.md)
@@ -25,7 +25,7 @@ No wrapper code. No per-spec deployment. No port sprawl. Register as many servic
 - **MCP** (Model Context Protocol) is how agents consume tools — Claude Code and friends speak it natively over Streamable HTTP.
 - Hand-writing MCP wrappers for every endpoint is repetitive and drifts out of sync. Running *one MCP server per spec* means port sprawl and linear ops cost.
 
-**api-to-mcp is a gateway**: one resident process, one port, path-level multi-tenancy (`/mcp/{service}`). Registration takes effect immediately — no restarts.
+**openapi-mcp-hub is a gateway**: one resident process, one port, path-level multi-tenancy (`/mcp/{service}`). Registration takes effect immediately — no restarts.
 
 ```text
              ┌──────────── admin plane (admin token) ─────────────┐
@@ -34,7 +34,7 @@ No wrapper code. No per-spec deployment. No port sprawl. Register as many servic
              │  POST /services/preview    dry-run registration    │
              └────────────────────┬───────────────────────────────┘
                                   ▼
-   Agents ── MCP (streamable HTTP / SSE) ──▶  api-to-mcp gateway  ── HTTP ──▶  your APIs
+   Agents ── MCP (streamable HTTP / SSE) ──▶  openapi-mcp-hub gateway  ── HTTP ──▶  your APIs
    Claude Code, Cursor, custom clients        single port :20033   ── SQL ──▶  PostgreSQL / MySQL 8+
                                              per-service api_key
 ```
@@ -42,7 +42,7 @@ No wrapper code. No per-spec deployment. No port sprawl. Register as many servic
 ## Quickstart
 
 ```bash
-git clone https://github.com/PLACEHOLDER/api-to-mcp && cd api-to-mcp
+git clone https://github.com/PLACEHOLDER/openapi-mcp-hub && cd openapi-mcp-hub
 docker compose up          # gateway + demo mock API, auto-registers a petstore service
 ```
 
@@ -109,7 +109,7 @@ Credentials are referenced **by env var name only** — nothing sensitive is per
 
 ## Comparison
 
-| | api-to-mcp | one-MCP-server-per-spec | general API gateways + MCP plugin |
+| | openapi-mcp-hub | one-MCP-server-per-spec | general API gateways + MCP plugin |
 |---|---|---|---|
 | New service | POST a spec, ~1s | Write & deploy a wrapper | Plugin config + reload |
 | Ports | **1** | N | 1 (heavyweight) |

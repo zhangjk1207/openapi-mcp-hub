@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from api_to_mcp.config import GatewayConfig, TargetNotAllowed, _normalize_host
+from openapi_mcp_hub.config import GatewayConfig, TargetNotAllowed, _normalize_host
 
 
 def _cfg(allowlist: list[str]) -> GatewayConfig:
@@ -62,7 +62,7 @@ class TestEnsureTargetAllowed:
     async def test_dns_all_in_net(self, monkeypatch):
         cfg = _cfg(["10.0.0.0/8"])
         monkeypatch.setattr(
-            "api_to_mcp.config.socket.getaddrinfo",
+            "openapi_mcp_hub.config.socket.getaddrinfo",
             lambda host, port: [(None, None, None, None, ("10.1.1.1", 0))],
         )
         await cfg.ensure_target_allowed("http://internal.corp/x")
@@ -72,7 +72,7 @@ class TestEnsureTargetAllowed:
         # 域名解析出网段外 IP => 拒绝（防注册合法域名后 rebinding 到内网）
         cfg = _cfg(["10.0.0.0/8"])
         monkeypatch.setattr(
-            "api_to_mcp.config.socket.getaddrinfo",
+            "openapi_mcp_hub.config.socket.getaddrinfo",
             lambda host, port: [(None, None, None, None, ("192.168.1.1", 0))],
         )
         with pytest.raises(TargetNotAllowed, match="不在 allowlist 网段内"):
@@ -83,7 +83,7 @@ class TestEnsureTargetAllowed:
         # 任一解析 IP 不在网段 => 拒绝
         cfg = _cfg(["10.0.0.0/8"])
         monkeypatch.setattr(
-            "api_to_mcp.config.socket.getaddrinfo",
+            "openapi_mcp_hub.config.socket.getaddrinfo",
             lambda host, port: [
                 (None, None, None, None, ("10.1.1.1", 0)),
                 (None, None, None, None, ("192.168.1.1", 0)),
@@ -100,7 +100,7 @@ class TestEnsureTargetAllowed:
             raise socket.gaierror("dns boom")
 
         cfg = _cfg(["10.0.0.0/8"])
-        monkeypatch.setattr("api_to_mcp.config.socket.getaddrinfo", boom)
+        monkeypatch.setattr("openapi_mcp_hub.config.socket.getaddrinfo", boom)
         with pytest.raises(TargetNotAllowed, match="解析失败"):
             await cfg.ensure_target_allowed("http://internal.corp/x")
 
@@ -111,7 +111,7 @@ class TestEnsureTargetAllowed:
         def boom(host, port):  # 若误走 DNS 会炸
             raise AssertionError("IP 字面量不应触发 DNS 解析")
 
-        monkeypatch.setattr("api_to_mcp.config.socket.getaddrinfo", boom)
+        monkeypatch.setattr("openapi_mcp_hub.config.socket.getaddrinfo", boom)
         await cfg.ensure_target_allowed("http://10.2.3.4/x")
         with pytest.raises(TargetNotAllowed):
             await cfg.ensure_target_allowed("http://8.8.8.8/x")

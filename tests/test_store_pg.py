@@ -1,6 +1,6 @@
-"""PgStore 集成测试：需要真实 PostgreSQL（A2M_PG_TEST_DSN 指向专用测试库）。
+"""PgStore 集成测试：需要真实 PostgreSQL（OMH_PG_TEST_DSN 指向专用测试库）。
 
-    A2M_PG_TEST_DSN='postgresql://user:pass@host:port/api_to_mcp_test' pytest tests/test_store_pg.py
+    OMH_PG_TEST_DSN='postgresql://user:pass@host:port/openapi_mcp_hub_test' pytest tests/test_store_pg.py
 
 未配置时自动跳过，不影响常规测试。
 """
@@ -12,10 +12,10 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
-DSN = os.environ.get("A2M_PG_TEST_DSN", "")
+DSN = os.environ.get("OMH_PG_TEST_DSN", "")
 
 pytestmark = pytest.mark.skipif(
-    not DSN, reason="未配置 A2M_PG_TEST_DSN，跳过 pg 持久化集成测试"
+    not DSN, reason="未配置 OMH_PG_TEST_DSN，跳过 pg 持久化集成测试"
 )
 
 RECORD = {
@@ -36,7 +36,7 @@ RECORD = {
 
 @pytest.fixture
 async def pg_store(tmp_path):
-    from api_to_mcp.store import PgStore
+    from openapi_mcp_hub.store import PgStore
 
     store = PgStore(DSN, legacy_services_dir=tmp_path / "services")
     await store.connect()
@@ -76,7 +76,7 @@ async def test_auto_migrate_from_files(pg_store, tmp_path):
     (legacy / "petstore.json").write_text(json.dumps(RECORD, ensure_ascii=False), "utf-8")
     (legacy / "another.json").write_text(json.dumps({**RECORD, "name": "another"}), "utf-8")
 
-    from api_to_mcp.store import PgStore
+    from openapi_mcp_hub.store import PgStore
 
     store2 = PgStore(DSN, legacy_services_dir=legacy)
     await store2.connect()
@@ -91,10 +91,10 @@ async def test_auto_migrate_from_files(pg_store, tmp_path):
 
 async def test_gateway_full_cycle_with_pg(tmp_path, monkeypatch):
     """端到端：pg 模式注册 → 重建 app（模拟重启）→ 服务恢复且 key 不变。"""
-    from api_to_mcp.config import GatewayConfig
-    from api_to_mcp.main import create_app
+    from openapi_mcp_hub.config import GatewayConfig
+    from openapi_mcp_hub.main import create_app
 
-    monkeypatch.setenv("A2M_TEST_TOK", "x")
+    monkeypatch.setenv("OMH_TEST_TOK", "x")
     spec = {
         "openapi": "3.0.0",
         "info": {"title": "t", "version": "1"},
@@ -117,7 +117,7 @@ async def test_gateway_full_cycle_with_pg(tmp_path, monkeypatch):
                 "name": "pg-svc",
                 "spec": spec,
                 "base_url": "http://target.test",
-                "auth": {"type": "bearer", "token_env": "A2M_TEST_TOK"},
+                "auth": {"type": "bearer", "token_env": "OMH_TEST_TOK"},
                 "owner": "pg-test",
             },
             headers={"Authorization": "Bearer t"},

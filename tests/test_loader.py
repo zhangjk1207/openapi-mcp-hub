@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from api_to_mcp.config import MAX_REF_DEPTH
-from api_to_mcp.errors import SpecError
-from api_to_mcp.loader import parse_spec_text, resolve_refs, validate_spec
+from openapi_mcp_hub.config import MAX_REF_DEPTH
+from openapi_mcp_hub.errors import SpecError
+from openapi_mcp_hub.loader import parse_spec_text, resolve_refs, validate_spec
 
 
 class TestParse:
@@ -243,7 +243,7 @@ SWAGGER2_SPEC = {
 
 class TestSwagger2Normalize:
     def test_normalize_structure(self):
-        from api_to_mcp.loader import normalize_spec
+        from openapi_mcp_hub.loader import normalize_spec
 
         spec, warnings = normalize_spec(SWAGGER2_SPEC)
         assert spec["openapi"] == "3.0.0"
@@ -258,7 +258,7 @@ class TestSwagger2Normalize:
         assert any("formData" in w for w in warnings)
 
     def test_refs_rewritten(self):
-        from api_to_mcp.loader import normalize_spec
+        from openapi_mcp_hub.loader import normalize_spec
 
         spec, _ = normalize_spec(SWAGGER2_SPEC)
         op = spec["paths"]["/users/{userId}"]["get"]
@@ -270,7 +270,7 @@ class TestSwagger2Normalize:
         assert body["required"] is True
 
     def test_inline_params_get_schema(self):
-        from api_to_mcp.loader import normalize_spec
+        from openapi_mcp_hub.loader import normalize_spec
 
         spec, _ = normalize_spec(SWAGGER2_SPEC)
         params = spec["paths"]["/users/{userId}"]["get"]["parameters"]
@@ -282,7 +282,7 @@ class TestSwagger2Normalize:
         assert "collectionFormat" not in str(params)
 
     def test_formdata_merged_into_body(self):
-        from api_to_mcp.loader import normalize_spec
+        from openapi_mcp_hub.loader import normalize_spec
 
         spec, _ = normalize_spec(SWAGGER2_SPEC)
         schema = spec["paths"]["/users"]["put"]["requestBody"]["content"]["application/json"]["schema"]
@@ -292,10 +292,10 @@ class TestSwagger2Normalize:
 
     def test_swagger_full_pipeline_to_tools(self):
         """Swagger 2.0 全流水线：normalize → resolve → extract → generate。"""
-        from api_to_mcp.extractor import extract_endpoints
-        from api_to_mcp.generator import generate_tools
-        from api_to_mcp.loader import normalize_spec, resolve_refs, validate_spec
-        from api_to_mcp.models import Filters
+        from openapi_mcp_hub.extractor import extract_endpoints
+        from openapi_mcp_hub.generator import generate_tools
+        from openapi_mcp_hub.loader import normalize_spec, resolve_refs, validate_spec
+        from openapi_mcp_hub.models import Filters
 
         spec, _ = normalize_spec(SWAGGER2_SPEC)
         validate_spec(spec)
@@ -316,7 +316,7 @@ class TestSwagger2Normalize:
         assert by_name["update_user"].input_schema["properties"]["body"]["required"] == ["uid"]
 
     def test_oas3_passthrough(self):
-        from api_to_mcp.loader import normalize_spec
+        from openapi_mcp_hub.loader import normalize_spec
 
         oas3 = {"openapi": "3.0.0", "paths": {"/x": {"get": {}}}}
         spec, warnings = normalize_spec(oas3)
@@ -344,9 +344,9 @@ class TestOpenApi31:
         warnings = validate_spec(spec31)
         assert any("3.1" in w for w in warnings)
 
-        from api_to_mcp.extractor import extract_endpoints
-        from api_to_mcp.loader import resolve_refs
-        from api_to_mcp.models import Filters
+        from openapi_mcp_hub.extractor import extract_endpoints
+        from openapi_mcp_hub.loader import resolve_refs
+        from openapi_mcp_hub.models import Filters
 
         endpoints, _ = extract_endpoints(resolve_refs(spec31), Filters())
         params = {p.name: p for p in endpoints[0].params}
@@ -359,7 +359,7 @@ class TestRedirectSafeFetch:
     def test_redirect_each_hop_checked(self, respx_mock):
         import httpx
 
-        from api_to_mcp.loader import load_spec
+        from openapi_mcp_hub.loader import load_spec
 
         spec_body = json.dumps({"openapi": "3.0.0", "paths": {"/x": {"get": {}}}})
 
@@ -385,7 +385,7 @@ class TestRedirectSafeFetch:
     def test_redirect_loop_bounded(self, respx_mock):
         import httpx
 
-        from api_to_mcp.loader import load_spec
+        from openapi_mcp_hub.loader import load_spec
 
         respx_mock.get("https://good.example/loop").mock(
             return_value=httpx.Response(302, headers={"Location": "https://good.example/loop"})
@@ -396,7 +396,7 @@ class TestRedirectSafeFetch:
     def test_relative_location_joined(self, respx_mock):
         import httpx
 
-        from api_to_mcp.loader import load_spec
+        from openapi_mcp_hub.loader import load_spec
 
         respx_mock.get("https://good.example/a/spec").mock(
             return_value=httpx.Response(301, headers={"Location": "/b/spec"})

@@ -2,7 +2,7 @@
 
 两个后端，Registry 无感切换（接口一致，方法全异步）：
 - FileStore：data/services/*.json 原子写（默认；无外部依赖，本地开发/单机够用）
-- PgStore：PostgreSQL JSONB（配 API_TO_MCP_DATABASE_URL 后启用）
+- PgStore：PostgreSQL JSONB（配 OPENAPI_MCP_HUB_DATABASE_URL 后启用）
 
 PgStore 建表：
     services(name PK, title, base_url, api_key_hash, owner, created_at, updated_at, record JSONB)

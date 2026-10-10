@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from api_to_mcp.templates import (
+from openapi_mcp_hub.templates import (
     TemplateError,
     render_response,
     validate_template,

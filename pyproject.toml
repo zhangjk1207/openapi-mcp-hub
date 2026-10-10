@@ -3,13 +3,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "api-to-mcp"
+name = "openapi-mcp-hub"
 version = "0.2.1"
 description = "OpenAPI → MCP 网关：POST 一份 openapi.json，即刻生成可接入 agent 的 MCP 端点"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "api-to-mcp contributors" }]
+authors = [{ name = "openapi-mcp-hub contributors" }]
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
@@ -22,7 +22,7 @@ dependencies = [
     "zstandard>=0.18",
     "pydantic>=2.6",
     "PyYAML>=6.0",
-    # PostgreSQL 持久化后端（API_TO_MCP_DATABASE_URL，不配则用文件后端）
+    # PostgreSQL 持久化后端（OPENAPI_MCP_HUB_DATABASE_URL，不配则用文件后端）
     "asyncpg>=0.29",
     # MySQL 只读注册源（dialect 由 DSN 前缀推断）
     "aiomysql>=0.2",
@@ -36,7 +36,7 @@ dev = [
 ]
 
 [project.scripts]
-api-to-mcp = "api_to_mcp.main:main"
+openapi-mcp-hub = "openapi_mcp_hub.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

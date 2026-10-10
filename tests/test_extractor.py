@@ -2,10 +2,10 @@
 
 import pytest
 
-from api_to_mcp.errors import SpecError
-from api_to_mcp.extractor import extract_endpoints
-from api_to_mcp.loader import resolve_spec
-from api_to_mcp.models import Filters, ParamLocation
+from openapi_mcp_hub.errors import SpecError
+from openapi_mcp_hub.extractor import extract_endpoints
+from openapi_mcp_hub.loader import resolve_spec
+from openapi_mcp_hub.models import Filters, ParamLocation
 
 
 def _extract(spec, **filter_kwargs):

@@ -22,7 +22,7 @@ def build_admin_router(registry: Registry, cfg: GatewayConfig) -> APIRouter:
         if not cfg.admin_token:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="管理面未配置 admin token（设置 API_TO_MCP_ADMIN_TOKEN 后重启）",
+                detail="管理面未配置 admin token（设置 OPENAPI_MCP_HUB_ADMIN_TOKEN 后重启）",
             )
         auth = request.headers.get("authorization", "")
         scheme, _, token = auth.partition(" ")

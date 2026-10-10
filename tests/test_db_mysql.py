@@ -1,6 +1,6 @@
-"""DB → MCP MySQL 集成测试（M5-1 双方言）：需真实 MySQL 8（A2M_MYSQL_TEST_DSN）。
+"""DB → MCP MySQL 集成测试（M5-1 双方言）：需真实 MySQL 8（OMH_MYSQL_TEST_DSN）。
 
-    A2M_MYSQL_TEST_DSN='mysql://root:pass@127.0.0.1:33061/a2m_test' \
+    OMH_MYSQL_TEST_DSN='mysql://root:pass@127.0.0.1:33061/a2m_test' \
         pytest tests/test_db_mysql.py
 
 未配置时自动跳过。前置：测试库含 a2m_toys / a2m_orders 玩具表（fixture 自动建）。
@@ -14,18 +14,18 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
-DSN = os.environ.get("A2M_MYSQL_TEST_DSN", "")
+DSN = os.environ.get("OMH_MYSQL_TEST_DSN", "")
 
 pytestmark = pytest.mark.skipif(
-    not DSN, reason="未配置 A2M_MYSQL_TEST_DSN，跳过 mysql→mcp 集成测试"
+    not DSN, reason="未配置 OMH_MYSQL_TEST_DSN，跳过 mysql→mcp 集成测试"
 )
 
 if DSN:
-    os.environ["A2M_MYSQL_URL"] = DSN
+    os.environ["OMH_MYSQL_URL"] = DSN
 
-from api_to_mcp.config import GatewayConfig  # noqa: E402
-from api_to_mcp.main import create_app  # noqa: E402
-from api_to_mcp.models import ServiceRegistration  # noqa: E402
+from openapi_mcp_hub.config import GatewayConfig  # noqa: E402
+from openapi_mcp_hub.main import create_app  # noqa: E402
+from openapi_mcp_hub.models import ServiceRegistration  # noqa: E402
 
 
 
@@ -97,7 +97,7 @@ async def _delete(gateway, name):
 
 
 async def _register(gateway, extra_db=None):
-    db = {"url_env": "A2M_MYSQL_URL"}
+    db = {"url_env": "OMH_MYSQL_URL"}
     if extra_db:
         db.update(extra_db)
     r = await gateway.post("/services", json={"name": "toys-db", "db": db})
@@ -199,7 +199,7 @@ async def test_persistence_recovery_and_health(toy_tables, tmp_path):
     reg1 = app1.state.registry
     await reg1.connect_store()
     _, key, _ = await reg1.register(
-        ServiceRegistration(name="toys-db", db={"url_env": "A2M_MYSQL_URL", "max_rows": 3})
+        ServiceRegistration(name="toys-db", db={"url_env": "OMH_MYSQL_URL", "max_rows": 3})
     )
     rec = reg1.get("toys-db").record
     assert rec["db"]["db_schema"] == "a2m_test"  # MySQL：库名回写落盘
@@ -233,9 +233,9 @@ async def test_persistence_recovery_and_health(toy_tables, tmp_path):
 
 async def test_bad_dsn_prefix(gateway):
     """不支持的 DSN 前缀 → 422 可诊断。"""
-    os.environ["A2M_BAD_DSN"] = "redis://x/y"
+    os.environ["OMH_BAD_DSN"] = "redis://x/y"
     r = await gateway.post(
-        "/services", json={"name": "bad", "db": {"url_env": "A2M_BAD_DSN"}}
+        "/services", json={"name": "bad", "db": {"url_env": "OMH_BAD_DSN"}}
     )
     assert r.status_code == 422
     assert "DSN 前缀" in r.json()["detail"]["message"]

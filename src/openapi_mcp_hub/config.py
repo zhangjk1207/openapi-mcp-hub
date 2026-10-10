@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
-ENV_PREFIX = "API_TO_MCP"
+ENV_PREFIX = "OPENAPI_MCP_HUB"
 
 # 默认单服务工具数软上限（工具过多会显著降低 LLM 选择准确率）
 DEFAULT_MAX_TOOLS = 100
@@ -140,7 +140,7 @@ class GatewayConfig:
             if self._host_in_allowed_nets(host):
                 return
             raise TargetNotAllowed(
-                f"目标 IP 不在 allowlist 网段内: {host}（检查 API_TO_MCP_HOST_ALLOWLIST）"
+                f"目标 IP 不在 allowlist 网段内: {host}（检查 OPENAPI_MCP_HUB_HOST_ALLOWLIST）"
             )
         # 域名：先确认 allowlist 有网段条目可核验，再解析比对
         if not self._has_net_entries():

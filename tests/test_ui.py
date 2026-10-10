@@ -11,7 +11,7 @@ async def test_ui_served_at_root(gateway):
     resp = await gateway.get("/")
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
-    assert "api-to-mcp · 控制台" in resp.text
+    assert "openapi-mcp-hub · 控制台" in resp.text
     # 无外部依赖：不引任何外链资源（内网可用性）
     assert 'src="http' not in resp.text and 'href="http' not in resp.text
 

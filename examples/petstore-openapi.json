@@ -3,7 +3,7 @@
   "info": {
     "title": "Petstore 示例 API",
     "version": "1.0.0",
-    "description": "api-to-mcp 示例：用于验证 openapi -> MCP 全链路"
+    "description": "openapi-mcp-hub 示例：用于验证 openapi -> MCP 全链路"
   },
   "servers": [
     {

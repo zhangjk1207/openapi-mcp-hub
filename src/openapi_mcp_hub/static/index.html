@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>api-to-mcp · 控制台</title>
+<title>openapi-mcp-hub · 控制台</title>
 <style>
 /* ================= 设计 token ================= */
 :root{
@@ -283,7 +283,7 @@ table.mini td{padding:8px 12px;font-size:12.5px}
 <header>
   <div class="brand">
     <span class="mark"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg></span>
-    <b>api-to-mcp</b>
+    <b>openapi-mcp-hub</b>
     <span class="badge">console</span>
   </div>
   <span class="gw" id="gw"><span class="dot"></span><span id="gwTxt">检测中…</span></span>
@@ -453,7 +453,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BASE = location.origin;
-let TOKEN = localStorage.getItem("a2m_admin_token") || "";
+let TOKEN = localStorage.getItem("omh_admin_token") || "";
 
 function toast(msg, cls="") {
   $("toastTx").textContent = msg;
@@ -522,7 +522,7 @@ async function api(path, opts = {}) {
 /* ---------------- 顶栏 ---------------- */
 $("saveTok").onclick = () => {
   TOKEN = $("tok").value.trim();
-  localStorage.setItem("a2m_admin_token", TOKEN);
+  localStorage.setItem("omh_admin_token", TOKEN);
   $("tok").classList.remove("err");
   toast(TOKEN ? "token 已保存到本浏览器" : "token 已清除", "ok");
   loadAll();

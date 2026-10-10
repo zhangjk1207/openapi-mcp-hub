@@ -67,10 +67,10 @@ class McpServiceApp:
         self.calls: deque[dict[str, Any]] = deque(maxlen=200)
 
         server = Server(
-            f"api-to-mcp/{name}",
+            f"openapi-mcp-hub/{name}",
             version=__version__,
             title=title,
-            description="本服务由 api-to-mcp 网关从 openapi.json 自动生成，工具调用将代理到真实 REST API。",
+            description="本服务由 openapi-mcp-hub 网关从 openapi.json 自动生成，工具调用将代理到真实 REST API。",
             on_list_tools=self._on_list_tools,
             on_call_tool=self._on_call_tool,
         )

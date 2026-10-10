@@ -2,13 +2,13 @@
 
 import pytest
 
-from api_to_mcp.errors import RegistrationError
-from api_to_mcp.generator import (
+from openapi_mcp_hub.errors import RegistrationError
+from openapi_mcp_hub.generator import (
     build_input_schema,
     generate_tools,
     sanitize_tool_name,
 )
-from api_to_mcp.models import ApiBody, ApiEndpoint, ApiParam, ParamLocation
+from openapi_mcp_hub.models import ApiBody, ApiEndpoint, ApiParam, ParamLocation
 
 
 def _ep(**kwargs) -> ApiEndpoint:

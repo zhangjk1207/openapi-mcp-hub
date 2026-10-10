@@ -18,8 +18,8 @@ from fastapi import FastAPI, HTTPException, Request
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from api_to_mcp.config import GatewayConfig
-from api_to_mcp.main import create_app
+from openapi_mcp_hub.config import GatewayConfig
+from openapi_mcp_hub.main import create_app
 
 from .conftest import PETSTORE_SPEC
 
@@ -169,7 +169,7 @@ class TestFullLifecycle:
             # ------------------------------------------------ 2. MCP 全链路
             async with _mcp_session(mcp_url, api_key) as session:
                 init = session.initialize_result
-                assert init.server_info.name == "api-to-mcp/petstore"
+                assert init.server_info.name == "openapi-mcp-hub/petstore"
 
                 tools = await session.list_tools()
                 names = [t.name for t in tools.tools]
@@ -333,7 +333,7 @@ class TestSseCompat:
             async with sse_client(sse_url, headers={"X-Api-Key": api_key}) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    assert session.initialize_result.server_info.name == "api-to-mcp/petstore"
+                    assert session.initialize_result.server_info.name == "openapi-mcp-hub/petstore"
                     tools = await session.list_tools()
                     assert "get_pet_by_id" in [t.name for t in tools.tools]
                     ok = await session.call_tool("get_pet_by_id", {"petId": 42})
