@@ -1,0 +1,12 @@
+.venv/
+.git/
+data/
+logs/
+debug/
+.debug/
+__pycache__/
+*.pyc
+tests/
+deploy/
+examples/
+.claude/

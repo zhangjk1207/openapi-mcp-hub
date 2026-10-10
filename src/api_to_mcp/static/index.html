@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>api-to-mcp · 控制台</title>
+<style>
+/* ================= 设计 token ================= */
+:root{
+  --bg:#0b0e14; --surface:#11151f; --surface-2:#171d2a; --surface-3:#1e2534;
+  --line:#2c3650; --line-soft:#20283a;
+  --fg:#e7ebf4; --fg-mid:#c3cadb; --dim:#9aa6bc; --faint:#71809a;
+  --acc:#6e7bf4; --acc-hi:#8b95ff; --acc-soft:rgba(110,123,244,.14);
+  --ok:#34d399; --ok-soft:rgba(52,211,153,.13);
+  --warn:#fbbf24; --warn-soft:rgba(251,191,36,.12);
+  --err:#f87171; --err-soft:rgba(248,113,113,.13);
+  --cyan:#5ecddc; --cyan-soft:rgba(94,205,220,.13);
+  --r-s:6px; --r-m:10px; --r-l:14px;
+  --sh-1:0 1px 2px rgba(0,0,0,.35);
+  --sh-2:0 8px 32px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.03) inset;
+  --sh-3:0 24px 64px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.05) inset;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Consolas,monospace;
+  --t:.16s cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:14px/1.6 system-ui,-apple-system,"Segoe UI","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased}
+::selection{background:var(--acc);color:#fff}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2a3348;border-radius:8px;border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:#39455f}
+button{font:inherit}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono)}
+.dim{color:var(--dim)}
+
+/* ================= 顶栏 ================= */
+header{position:sticky;top:0;z-index:50;height:58px;display:flex;align-items:center;gap:16px;
+  padding:0 22px;border-bottom:1px solid var(--line-soft);
+  background:rgba(11,14,20,.82);backdrop-filter:blur(14px)}
+.brand{display:flex;align-items:center;gap:10px;user-select:none}
+.brand .mark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:linear-gradient(135deg,#7a86ff 0%,#5b67e8 60%,#4a55d6 100%);
+  box-shadow:0 2px 10px rgba(110,123,244,.35), 0 1px 0 rgba(255,255,255,.25) inset}
+.brand .mark svg{width:16px;height:16px;stroke:#fff;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.brand b{font-size:15px;font-weight:650;letter-spacing:.2px}
+.brand .badge{font-size:10.5px;font-weight:600;color:var(--dim);letter-spacing:.8px;
+  text-transform:uppercase;margin-left:2px;padding:2px 7px;border:1px solid var(--line);
+  border-radius:20px;background:var(--surface)}
+.gw{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dim);
+  padding:5px 12px;border:1px solid var(--line);border-radius:20px;background:var(--surface)}
+.gw .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+.gw.ok .dot{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.gw.err .dot{background:var(--err);box-shadow:0 0 0 3px var(--err-soft)}
+header .spacer{flex:1}
+.tokwrap{display:flex;align-items:center;gap:8px}
+.tokwrap input{width:230px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-s);padding:7px 11px;color:var(--fg);font-size:13px;
+  transition:border-color var(--t),box-shadow var(--t)}
+.tokwrap input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+.tokwrap input.err{border-color:var(--err);box-shadow:0 0 0 3px var(--err-soft)}
+.tokwrap input::placeholder{color:var(--faint)}
+
+/* ================= 按钮 ================= */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:7px 15px;border-radius:var(--r-s);
+  border:1px solid var(--line);background:var(--surface-2);color:var(--fg-mid);
+  cursor:pointer;font-size:13.5px;font-weight:550;transition:all var(--t);white-space:nowrap}
+.btn:hover{background:var(--surface-3);color:var(--fg);border-color:#33405c}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.btn.pri{background:linear-gradient(180deg,#7883f8,#6370ee);border-color:#6d78f2;color:#fff;
+  box-shadow:0 1px 0 rgba(255,255,255,.18) inset, 0 2px 8px rgba(110,123,244,.3)}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.danger{background:transparent;border-color:rgba(248,113,113,.4);color:var(--err)}
+.btn.danger:hover{background:var(--err-soft);border-color:var(--err)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--dim)}
+.btn.ghost:hover{background:var(--surface-2);color:var(--fg);border-color:var(--line)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+
+/* ================= 主区 ================= */
+main{max-width:1120px;margin:0 auto;padding:28px 22px 60px}
+.pagehead{display:flex;align-items:flex-end;gap:14px;margin-bottom:20px}
+.pagehead h2{margin:0;font-size:20px;font-weight:650;letter-spacing:.2px}
+.pagehead .sub{color:var(--dim);font-size:13px;margin-bottom:2px}
+.pagehead .actions{margin-left:auto;display:flex;gap:10px}
+.stat{display:flex;gap:8px;align-items:baseline;margin-left:16px;padding-left:16px;
+  border-left:1px solid var(--line-soft);color:var(--dim);font-size:12.5px}
+.stat b{color:var(--fg);font-size:16px;font-weight:650}
+
+/* 空状态 */
+.empty-card{border:1px dashed var(--line);border-radius:var(--r-l);padding:56px 24px;
+  text-align:center;background:var(--surface)}
+.empty-card svg{width:72px;height:72px;margin-bottom:14px;opacity:.85}
+.empty-card h3{margin:0 0 6px;font-size:15px;font-weight:600}
+.empty-card p{margin:0 0 18px;color:var(--dim);font-size:13px}
+
+/* ================= 服务表格 ================= */
+.card{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r-l);
+  box-shadow:var(--sh-1);overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--dim);
+  text-align:left;padding:11px 16px;background:var(--surface-2);border-bottom:1px solid var(--line-soft)}
+td{padding:13px 16px;border-bottom:1px solid var(--line-soft);font-size:13.5px;vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.row{cursor:pointer;transition:background var(--t)}
+tbody tr.row:hover{background:var(--surface-2)}
+td b.svc{font-weight:600;font-size:14px}
+td .svc-sub{font-size:12px;color:var(--dim);margin-top:1px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:550;
+  padding:3px 10px;border-radius:20px}
+.pill .pdot{width:6px;height:6px;border-radius:50%}
+.pill.http{background:var(--acc-soft);color:#9aa6ff}.pill.http .pdot{background:var(--acc)}
+.pill.db{background:var(--ok-soft);color:#5adba8}.pill.db .pdot{background:var(--ok)}
+td.num-cell{font-family:var(--mono);font-size:13px;color:var(--fg-mid)}
+td .tgt{font-family:var(--mono);font-size:12px;color:var(--dim);max-width:280px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+td .when{font-family:var(--mono);font-size:12px;color:var(--dim)}
+tr.row .chev{color:var(--dim);transition:transform var(--t)}
+tr.row:hover .chev{color:var(--dim);transform:translateX(2px)}
+
+/* 列表行入场 stagger */
+@keyframes rowIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+tbody tr.row{animation:rowIn .32s cubic-bezier(.2,.7,.3,1) both}
+tbody tr.row:nth-child(1){animation-delay:.02s}
+tbody tr.row:nth-child(2){animation-delay:.07s}
+tbody tr.row:nth-child(3){animation-delay:.12s}
+tbody tr.row:nth-child(4){animation-delay:.17s}
+tbody tr.row:nth-child(5){animation-delay:.22s}
+tbody tr.row:nth-child(n+6){animation-delay:.27s}
+
+/* 骨架屏 */
+@keyframes shimmer{0%{background-position:-200px 0}100%{background-position:200px 0}}
+.sk{height:44px;background:linear-gradient(90deg,var(--surface-2) 25%,var(--surface-3) 50%,var(--surface-2) 75%);
+  background-size:400px 100%;animation:shimmer 1.4s infinite linear;border-bottom:1px solid var(--line-soft)}
+
+/* ================= 弹层 ================= */
+.mask{position:fixed;inset:0;z-index:100;display:none;align-items:flex-start;justify-content:center;
+  padding:6vh 18px;background:rgba(4,6,10,.6);backdrop-filter:blur(4px)}
+.mask.on{display:flex}
+@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+.dlg{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-l);
+  width:680px;max-width:100%;max-height:84vh;display:flex;flex-direction:column;
+  box-shadow:var(--sh-3);animation:pop var(--t) ease-out}
+.dlg.wide{width:800px}
+.dlg-head{display:flex;align-items:center;gap:12px;padding:16px 20px 14px;border-bottom:1px solid var(--line-soft)}
+.dlg-head h2{margin:0;font-size:16px;font-weight:650;flex:1}
+.dlg-head .x{width:28px;height:28px;border-radius:var(--r-s);border:none;background:transparent;
+  color:var(--dim);cursor:pointer;display:grid;place-items:center;transition:all var(--t)}
+.dlg-head .x:hover{background:var(--surface-3);color:var(--fg)}
+.dlg-head .x svg{width:15px;height:15px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round}
+.dlg-body{padding:18px 20px;overflow-y:auto}
+.dlg-foot{display:flex;gap:10px;justify-content:flex-end;align-items:center;
+  padding:14px 20px;border-top:1px solid var(--line-soft);background:var(--surface-2);
+  border-radius:0 0 var(--r-l) var(--r-l)}
+.dlg-foot .note{margin-right:auto;color:var(--dim);font-size:12px}
+
+/* 分段 tab */
+.seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:var(--r-s);padding:3px;gap:2px;margin-bottom:18px}
+.seg button{border:none;background:transparent;color:var(--dim);font-size:13px;font-weight:550;
+  padding:6px 16px;border-radius:5px;cursor:pointer;transition:all var(--t)}
+.seg button.on{background:#252f47;color:#fff;box-shadow:var(--sh-1), 0 0 0 1px rgba(110,123,244,.55)}
+
+/* ================= 表单 ================= */
+.fset{margin-bottom:14px}
+.fset>.ft{font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;
+  color:var(--faint);margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.fset>.ft::after{content:"";flex:1;height:1px;background:var(--line-soft)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px 14px}
+.fgrid .full{grid-column:1/-1}
+.f label{display:flex;gap:4px;font-size:12.5px;color:var(--dim);margin-bottom:5px;font-weight:500}
+.f label .req{color:var(--err)}
+.f input,.f select,.f textarea{width:100%;background:var(--surface-2);color:var(--fg);
+  border:1px solid var(--line);border-radius:var(--r-s);padding:8px 11px;font-size:13.5px;
+  transition:border-color var(--t),box-shadow var(--t);font-family:inherit}
+.f textarea{font-family:var(--mono);font-size:12.5px;min-height:88px;resize:vertical;line-height:1.55}
+.f input:focus,.f select:focus,.f textarea:focus{outline:none;border-color:var(--acc);
+  box-shadow:0 0 0 3px var(--acc-soft)}
+.f input::placeholder,.f textarea::placeholder{color:var(--faint)}
+.f .fh{font-size:11.5px;color:var(--dim);margin-top:4px}
+a.tag-doc{color:var(--acc);text-decoration:none;font-size:12px}
+.upl{font-size:12px;font-weight:550;color:var(--acc);background:var(--acc-soft);
+  border:1px solid rgba(110,123,244,.35);border-radius:5px;padding:3px 10px;cursor:pointer;
+  transition:all var(--t)}
+.upl:hover{background:rgba(110,123,244,.22)}
+textarea.drag{border-color:var(--acc);border-style:dashed;box-shadow:0 0 0 3px var(--acc-soft)}
+a.tag-doc:hover{text-decoration:underline}
+
+/* 预检结果 */
+.pvbox{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-m);
+  padding:12px 14px;font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;
+  color:var(--fg-mid);line-height:1.7}
+
+/* ================= key 展示 ================= */
+.keycard{border:1px solid rgba(251,191,36,.35);background:linear-gradient(180deg,rgba(251,191,36,.06),transparent 40%);
+  border-radius:var(--r-m);padding:14px 16px;margin:4px 0 14px}
+.keycard .khead{display:flex;align-items:center;gap:8px;color:var(--warn);font-size:12.5px;
+  font-weight:600;margin-bottom:8px}
+.keycard .khead svg{width:15px;height:15px;stroke:var(--warn);fill:none;stroke-width:2;stroke-linecap:round}
+.keycard .kval{font-family:var(--mono);font-size:15px;color:#ffd989;letter-spacing:.3px;
+  word-break:break-all;background:rgba(0,0,0,.25);border-radius:var(--r-s);padding:10px 12px;
+  border:1px solid rgba(251,191,36,.2)}
+.krow{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.krow .cmd{flex:1;font-family:var(--mono);font-size:12px;color:var(--fg-mid);
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--r-s);
+  padding:8px 11px;word-break:break-all;user-select:all;line-height:1.6}
+.klabel{font-size:11.5px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--faint);margin:10px 0 6px}
+
+/* ================= 详情 ================= */
+.kvgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 18px;margin-bottom:4px}
+.kvgrid .cell{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:var(--r-s);
+  padding:8px 12px}
+.kvgrid .cell .kk{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
+.kvgrid .cell .vv{font-size:13px;font-weight:550}
+.kvgrid .cell .vv.mono{font-size:12.5px;font-weight:400}
+.dsect{margin-top:18px}
+.dsect h3{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;
+  letter-spacing:1.2px;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+.dsect h3 .n{background:var(--surface-3);border:1px solid var(--line);border-radius:10px;
+  padding:0 7px;font-size:11px;color:var(--dim)}
+.tool{display:flex;flex-direction:column;gap:2px;padding:10px 12px;background:var(--surface-2);
+  border:1px solid var(--line-soft);border-radius:var(--r-s);margin-bottom:8px}
+.tool .tn{font-family:var(--mono);font-size:13px;font-weight:550;color:#a5b0fc}
+.tool .tn .req{color:var(--faint);font-weight:400;font-size:12px;margin-left:8px}
+.tool .td{font-size:12.5px;color:var(--dim);line-height:1.55;max-height:60px;overflow:hidden}
+.hbox{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-m);padding:12px 14px;
+  font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;line-height:1.7;color:var(--fg-mid)}
+.hbox .good{color:var(--ok)} .hbox .bad{color:var(--err)}
+table.mini th{padding:8px 12px;font-size:10.5px}
+table.mini td{padding:8px 12px;font-size:12.5px}
+.st-ok{color:var(--ok);font-weight:550}.st-bad{color:var(--err);font-weight:550}
+
+.cp{flex:none;font-size:11px;font-weight:600;color:var(--dim);background:var(--surface-3);
+  border:1px solid var(--line);border-radius:5px;padding:2px 8px;cursor:pointer;transition:all var(--t)}
+.cp:hover{color:var(--acc);border-color:var(--acc)}
+
+/* ================= 响应式 ================= */
+@media (max-width: 860px){
+  header{padding:0 14px;gap:10px}
+  .gw{display:none}
+  .brand{gap:8px;flex:none}
+  .brand b{font-size:13.5px;white-space:nowrap}
+  .brand .badge{display:none}
+  .tokwrap input{width:118px}
+  .btn{min-height:44px;padding:9px 15px}
+  .seg button{padding:9px 16px}
+  .tokwrap .btn{min-height:38px}
+  main{padding:18px 14px 44px}
+  .pagehead{flex-wrap:wrap;gap:10px}
+  .pagehead .actions{width:100%}
+  .pagehead .actions .btn{flex:1;justify-content:center}
+  .stat{border:none;padding-left:0;margin-left:0}
+  .fgrid{grid-template-columns:1fr}
+  .dlg{width:100%;max-height:92dvh}
+  .dlg.wide{width:100%}
+  .mask{padding:10px}
+  .card{overflow-x:auto}          /* 表格横滚而非撑破布局 */
+  .kvgrid{grid-template-columns:1fr}
+  .empty-card{padding:36px 16px}
+}
+
+/* ================= toast ================= */
+#toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%) translateY(20px);z-index:200;
+  display:flex;align-items:center;gap:9px;background:var(--surface-3);border:1px solid var(--line);
+  border-radius:var(--r-m);padding:10px 18px;font-size:13.5px;box-shadow:var(--sh-3);
+  opacity:0;pointer-events:none;transition:all .25s cubic-bezier(.34,1.4,.64,1)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.ok{border-color:rgba(52,211,153,.4)} #toast.ok .ti{color:var(--ok)}
+#toast.err{border-color:rgba(248,113,113,.45)} #toast.err .ti{color:var(--err)}
+#toast .ti{font-size:15px;line-height:1}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="mark"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg></span>
+    <b>api-to-mcp</b>
+    <span class="badge">console</span>
+  </div>
+  <span class="gw" id="gw"><span class="dot"></span><span id="gwTxt">检测中…</span></span>
+  <span class="spacer"></span>
+  <div class="tokwrap">
+    <input id="tok" type="password" placeholder="管理 token" spellcheck="false">
+    <button class="btn" id="saveTok">保存</button>
+  </div>
+</header>
+
+<main>
+  <div class="pagehead">
+    <div>
+      <h2>服务</h2>
+      <div class="sub">注册即热生效 · 单端口多租户 · REST 与数据库同窗管理</div>
+    </div>
+    <span class="stat" id="stat"></span>
+    <div class="actions"><button class="btn pri" id="btnNew">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>注册服务</button></div>
+  </div>
+
+  <div id="listWrap"><div class="card"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>
+</main>
+
+<!-- ============ 注册 ============ -->
+<div class="mask" id="mReg"><div class="dlg">
+  <div class="dlg-head">
+    <h2>注册服务</h2>
+    <button class="x" aria-label="关闭" onclick="closeDlg('mReg')"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="dlg-body">
+    <div class="seg">
+      <button id="tabRest" class="on">REST · OpenAPI</button>
+      <button id="tabDb">数据库 · 只读</button>
+    </div>
+
+    <div id="paneRest">
+      <div class="fset">
+        <div class="ft">基本信息</div>
+        <div class="fgrid f">
+          <div><label>服务名 <span class="req">*</span></label><input id="r_name" placeholder="petstore" spellcheck="false">
+            <div class="fh">唯一，即端点名 /mcp/{name}</div></div>
+          <div><label>显示名</label><input id="r_title" placeholder="宠物商店（可选）"></div>
+        </div>
+      </div>
+      <div class="fset">
+        <div class="ft">接口来源</div>
+        <div class="fgrid f">
+          <div><label>spec_url</label><input id="r_specurl" placeholder="http://…/openapi.json（二选一）"></div>
+          <div><label>base_url（目标 API）</label><input id="r_base" placeholder="http://…（spec 含 servers 可不填）"></div>
+          <div class="full"><label style="justify-content:space-between">
+            <span>spec 原文（JSON / YAML）</span>
+            <button type="button" class="upl" id="specUp">📄 上传文件</button></label>
+            <input type="file" id="specFile" accept=".json,.yaml,.yml" hidden>
+            <textarea id="r_spec" placeholder='拖入 .json / .yaml 文件，或粘贴原文…' spellcheck="false"></textarea>
+            <div class="fh" id="specHint">支持 Swagger 2.0 / OpenAPI 3.0 / 3.1 · 可拖拽文件到输入框</div></div>
+        </div>
+      </div>
+      <div class="fset">
+        <div class="ft">认证与暴露控制</div>
+        <div class="fgrid f">
+          <div><label>认证类型</label>
+            <select id="r_authtype">
+              <option value="">无认证</option><option value="bearer">Bearer</option>
+              <option value="api_key">API Key</option><option value="basic">Basic</option>
+            </select></div>
+          <div><label>凭证环境变量名</label><input id="r_authenv" placeholder="PETSTORE_TOKEN（只填名字）">
+            <div class="fh">值配置在网关进程环境，永不落盘</div></div>
+          <div><label>include 路径过滤</label><input id="r_inc" placeholder="/pets*, /orders"></div>
+          <div><label>exclude 路径过滤</label><input id="r_exc" placeholder="/internal/*"></div>
+          <div><label>响应模板（服务级）</label><input id="r_tpl" placeholder="共 {{response.total}} 条"></div>
+          <div><label>allowed_tools 白名单</label><input id="r_allow" placeholder="list_pets, get_pet_by_id"></div>
+          <div><label>max_tools</label><input id="r_maxt" type="number" placeholder="默认网关上限"></div>
+          <div><label>timeout_s</label><input id="r_tmo" type="number" placeholder="30"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="paneDb" style="display:none">
+      <div class="fset">
+        <div class="ft">基本信息</div>
+        <div class="fgrid f">
+          <div><label>服务名 <span class="req">*</span></label><input id="d_name" placeholder="workflow-db" spellcheck="false">
+            <div class="fh">唯一，即端点名 /mcp/{name}</div></div>
+          <div><label>显示名</label><input id="d_title" placeholder="工作流库（可选）"></div>
+        </div>
+      </div>
+      <div class="fset">
+        <div class="ft">连接（PostgreSQL / MySQL 8+ · 只读）</div>
+        <div class="fgrid f">
+          <div><label>DSN 环境变量名 <span class="req">*</span></label><input id="d_urlenv" placeholder="WORKFLOW_DB_URL" spellcheck="false">
+            <div class="fh">如 postgresql://ro:***@host:5432/db，配置在网关进程环境</div></div>
+          <div><label>schema（MySQL 即库名）</label><input id="d_schema" placeholder="public"></div>
+          <div><label>include_tables</label><input id="d_inc" placeholder="t_*"></div>
+          <div><label>exclude_tables</label><input id="d_exc" placeholder="*_audit, tmp_*"></div>
+          <div><label>max_rows</label><input id="d_maxr" type="number" placeholder="200"></div>
+          <div><label>timeout_s</label><input id="d_tmo" type="number" placeholder="15"></div>
+        </div>
+      </div>
+      <div class="pvbox" style="margin:0">生成固定三件套工具 list_tables / describe_table / query。<br>写语句（INSERT / UPDATE / DELETE / DDL）一律拦截并返回 -32602。</div>
+    </div>
+
+    <div id="pvOut" class="fset" style="display:none">
+      <div class="ft">预检结果（不落盘）</div>
+      <div class="pvbox" id="pvTxt"></div>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <span class="note">spec 与 db 二选一 · 凭证只填环境变量名</span>
+    <button class="btn" onclick="closeDlg('mReg')">取消</button>
+    <button class="btn" id="btnPreview">预检</button>
+    <button class="btn pri" id="btnCreate">注册</button>
+  </div>
+</div></div>
+
+<!-- ============ key 展示 ============ -->
+<div class="mask" id="mKey"><div class="dlg">
+  <div class="dlg-head"><h2 id="kTitle">注册成功</h2>
+    <button class="x" aria-label="关闭" onclick="closeDlg('mKey')"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+  <div class="dlg-body">
+    <div class="keycard">
+      <div class="khead"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        api_key 仅此一次显示，请立即保存（丢失只能轮换）</div>
+      <div style="display:flex;gap:8px;align-items:stretch">
+        <div class="kval mono" id="kKey" style="flex:1"></div>
+        <button class="cp" id="kCopyKey2" style="align-self:center" onclick="copy(document.getElementById('kKey').textContent, this)">复制</button>
+      </div>
+    </div>
+    <div class="klabel">MCP 端点</div>
+    <div class="krow"><div class="cmd" id="kUrl"></div>
+      <button class="cp" onclick="copy(document.getElementById('kUrl').textContent, this)">复制</button></div>
+    <div class="klabel">接入 Claude Code</div>
+    <div class="krow"><div class="cmd" id="kCmd"></div></div>
+    <div class="klabel">生成的工具</div>
+    <div class="pvbox" id="kTools"></div>
+    <div id="kWarn"></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn ghost" id="kCopyCmd">复制接入命令</button>
+    <button class="btn pri" id="kCopyKey">复制 key</button>
+    <button class="btn" onclick="closeDlg('mKey')">完成</button>
+  </div>
+</div></div>
+
+<!-- ============ 详情 ============ -->
+<div class="mask" id="mDetail"><div class="dlg wide">
+  <div class="dlg-head"><h2 id="dtName"></h2>
+    <button class="x" aria-label="关闭" onclick="closeDlg('mDetail')"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+  <div class="dlg-body">
+    <div class="kvgrid" id="dtKv"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn" id="dtHealth">健康探测</button>
+      <button class="btn" id="dtRotate">轮换 key</button>
+      <button class="btn danger" id="dtDel" style="margin-left:auto">删除服务</button>
+    </div>
+    <div id="dtHealthOut" class="dsect" style="display:none"><h3>健康探测</h3><div class="hbox" id="dtHealthTxt"></div></div>
+    <div class="dsect"><h3>工具 <span class="n" id="dtToolN"></span></h3><div id="dtTools"></div></div>
+    <div class="dsect"><h3>最近调用 <span class="n">重启清零</span></h3><div id="dtCalls"></div></div>
+  </div>
+</div></div>
+
+<div id="toast" role="status" aria-live="polite"><span class="ti" id="toastIc">●</span><span id="toastTx"></span></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const BASE = location.origin;
+let TOKEN = localStorage.getItem("a2m_admin_token") || "";
+
+function toast(msg, cls="") {
+  $("toastTx").textContent = msg;
+  $("toastIc").textContent = cls === "ok" ? "✓" : cls === "err" ? "✕" : "●";
+  const t = $("toast");
+  t.className = cls; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 3400);
+}
+function copy(text, btn) {
+  // Clipboard API 仅安全上下文（https/localhost）存在；内网 http 走 execCommand 兜底
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.appendChild(ta);
+    ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    ta.remove();
+    return ok;
+  };
+  const done = ok => {
+    if (ok) {
+      toast("已复制到剪贴板", "ok");
+      if (btn) { btn.textContent = "已复制 ✓"; setTimeout(() => btn.textContent = btn.dataset.orig, 1800); }
+    } else toast("复制失败，请点击文本手动选择（已设为全选）", "err");
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(fallback()));
+  } else {
+    done(fallback());
+  }
+}
+function closeDlg(id) { $(id).classList.remove("on"); }
+function openDlg(id) { $(id).classList.add("on"); }
+document.querySelectorAll(".mask").forEach(m => m.addEventListener("mousedown", e => {
+  if (e.target === m) m.classList.remove("on");
+}));
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") document.querySelectorAll(".mask.on").forEach(m => m.classList.remove("on"));
+  if (e.key === "Enter" || e.key === " ") {
+    const tr = e.target.closest && e.target.closest("tr.row");
+    if (tr) { e.preventDefault(); openDetail(tr.dataset.name); }
+  }
+});
+
+/* ---------------- API ---------------- */
+async function api(path, opts = {}) {
+  const h = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  if (TOKEN) h["Authorization"] = "Bearer " + TOKEN;
+  const resp = await fetch(BASE + path, { ...opts, headers: h });
+  if (resp.status === 401) {
+    $("tok").classList.add("err"); toast("管理 token 无效或未填写", "err");
+    throw new Error("401");
+  }
+  if (resp.status === 204) return null;
+  let body = null;
+  try { body = await resp.json(); } catch { /* ignore */ }
+  if (!resp.ok) {
+    const msg = body?.detail?.message || body?.detail || resp.status + " " + resp.statusText;
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+  return body;
+}
+
+/* ---------------- 顶栏 ---------------- */
+$("saveTok").onclick = () => {
+  TOKEN = $("tok").value.trim();
+  localStorage.setItem("a2m_admin_token", TOKEN);
+  $("tok").classList.remove("err");
+  toast(TOKEN ? "token 已保存到本浏览器" : "token 已清除", "ok");
+  loadAll();
+};
+$("tok").addEventListener("keydown", e => { if (e.key === "Enter") $("saveTok").click(); });
+
+async function pingGateway() {
+  const gw = $("gw");
+  try {
+    const j = await (await fetch(BASE + "/healthz")).json();
+    gw.className = "gw " + (j.status === "ok" ? "ok" : "err");
+    $("gwTxt").textContent = j.status === "ok" ? "网关在线" : "网关异常";
+  } catch {
+    gw.className = "gw err"; $("gwTxt").textContent = "网关不可达";
+  }
+}
+
+/* ---------------- 服务列表 ---------------- */
+function skel() {
+  return '<div class="card">' + '<div class="sk"></div>'.repeat(3) + "</div>";
+}
+async function loadServices() {
+  const wrap = $("listWrap");
+  if (!TOKEN) {
+    wrap.innerHTML = `<div class="empty-card">
+      <svg viewBox="0 0 72 72" fill="none"><rect x="14" y="22" width="44" height="34" rx="6" stroke="#39455f" stroke-width="2"/><rect x="22" y="12" width="28" height="18" rx="4" stroke="#39455f" stroke-width="2"/><circle cx="36" cy="39" r="5" stroke="#6e7bf4" stroke-width="2"/><path d="M36 44v6" stroke="#6e7bf4" stroke-width="2" stroke-linecap="round"/></svg>
+      <h3>填入管理 token 开始</h3><p>顶栏粘贴部署时生成的 admin token（存于本浏览器，不上传服务端）</p></div>`;
+    $("stat").innerHTML = ""; return;
+  }
+  wrap.innerHTML = skel();
+  let list;
+  try { list = await api("/services"); }
+  catch (e) { wrap.innerHTML = ""; if (e.message !== "401") toast("加载失败：" + e.message, "err"); return; }
+  const nHttp = list.filter(s => s.kind !== "db").length, nDb = list.length - nHttp;
+  $("stat").innerHTML = `服务 <b class="num">${list.length}</b> · REST ${nHttp} · 数据库 ${nDb}`;
+  if (!list.length) {
+    wrap.innerHTML = `<div class="empty-card">
+      <svg viewBox="0 0 72 72" fill="none"><rect x="10" y="26" width="52" height="26" rx="6" stroke="#39455f" stroke-width="2"/><path d="M10 36h52" stroke="#39455f" stroke-width="2"/><rect x="18" y="14" width="20" height="12" rx="4" stroke="#6e7bf4" stroke-width="2"/></svg>
+      <h3>还没有注册任何服务</h3><p>贴一份 openapi.json 或一个数据库连接，30 秒生成 agent 可用的 MCP 端点</p>
+      <button class="btn pri" onclick="document.getElementById('btnNew').click()">注册第一个服务</button></div>`;
+    return;
+  }
+  wrap.innerHTML = `<div class="tscroll"><div class="card"><table>
+    <thead><tr><th>服务</th><th>类型</th><th>工具</th><th>目标</th><th>负责人</th><th>更新时间</th><th></th></tr></thead>
+    <tbody>${list.map(s => `
+    <tr class="row" tabindex="0" data-name="${esc(s.name)}" onclick="openDetail('${esc(s.name)}')">
+      <td><b class="svc">${esc(s.name)}</b>${s.title ? `<div class="svc-sub">${esc(s.title)}</div>` : ""}</td>
+      <td><span class="pill ${esc(s.kind)}"><span class="pdot"></span>${esc(s.kind)}</span></td>
+      <td class="num-cell num">${s.tool_count}</td>
+      <td><span class="tgt" title="${esc(s.base_url || "")}">${esc(s.base_url || "")}</span></td>
+      <td class="dim">${esc(s.owner || "—")}</td>
+      <td><span class="when num">${esc((s.updated_at || "").replace("T", " ").slice(5, 16))}</span></td>
+      <td class="chev">›</td>
+    </tr>`).join("")}</tbody></table></div></div>`;
+}
+async function loadAll() { pingGateway(); loadServices(); }
+
+/* ---------------- 注册 ---------------- */
+function loadSpecFile(file) {
+  if (!/\.(json|ya?ml)$/i.test(file.name)) { toast("只支持 .json / .yaml 文件", "err"); return; }
+  if (file.size > 4 * 1024 * 1024) { toast("文件超过 4MB，请检查是否选错了文件", "err"); return; }
+  const rd = new FileReader();
+  rd.onload = () => {
+    $("r_spec").value = rd.result;
+    const kb = file.size > 1024 ? (file.size / 1024).toFixed(1) + " KB" : file.size + " B";
+    $("specHint").textContent = `已载入 ${file.name}（${kb}）· 解析问题会在预检时报出`;
+    specTa.style.minHeight = "160px";
+    toast("已载入 " + file.name + "（" + kb + "）", "ok");
+  };
+  rd.readAsText(file);
+}
+$("specUp").onclick = () => $("specFile").click();
+$("specFile").onchange = e => { if (e.target.files[0]) loadSpecFile(e.target.files[0]); e.target.value = ""; };
+const specTa = $("r_spec");
+specTa.addEventListener("dragover", e => { e.preventDefault(); specTa.classList.add("drag"); });
+specTa.addEventListener("dragleave", () => specTa.classList.remove("drag"));
+specTa.addEventListener("drop", e => {
+  e.preventDefault(); specTa.classList.remove("drag");
+  if (e.dataTransfer.files[0]) loadSpecFile(e.dataTransfer.files[0]);
+});
+
+$("btnNew").onclick = () => {
+  $("pvOut").style.display = "none";
+  $("specHint").textContent = "支持 Swagger 2.0 / OpenAPI 3.0 / 3.1 · 可拖拽文件到输入框";
+  specTa.style.minHeight = "";
+  ["r_name","r_title","r_base","r_specurl","r_spec","r_authenv","r_inc","r_exc","r_maxt","r_tmo","r_tpl","r_allow",
+   "d_name","d_title","d_urlenv","d_schema","d_inc","d_exc","d_maxr","d_tmo"].forEach(i => $(i).value = "");
+  $("r_authtype").value = "";
+  openDlg("mReg"); setTimeout(() => $("r_name").focus(), 60);
+};
+$("tabRest").onclick = () => switchTab(true);
+$("tabDb").onclick = () => switchTab(false);
+function switchTab(rest) {
+  $("tabRest").classList.toggle("on", rest); $("tabDb").classList.toggle("on", !rest);
+  $("paneRest").style.display = rest ? "" : "none";
+  $("paneDb").style.display = rest ? "none" : "";
+}
+
+const csv = v => v.trim() ? v.trim().split(/\s*[,，]\s*/).filter(Boolean) : [];
+const num = (v, dflt) => { if (!v.trim()) return dflt; const n = Number(v); return Number.isFinite(n) ? n : dflt; };
+
+function collectForm() {
+  const isRest = $("tabRest").classList.contains("on");
+  const body = {};
+  if (isRest) {
+    body.name = $("r_name").value.trim();
+    const t = $("r_title").value.trim(); if (t) body.title = t;
+    const b = $("r_base").value.trim(); if (b) body.base_url = b;
+    const su = $("r_specurl").value.trim(); if (su) body.spec_url = su;
+    const sp = $("r_spec").value.trim();
+    if (sp) body.spec_text = sp;
+    const at = $("r_authtype").value, ae = $("r_authenv").value.trim();
+    if (at) {
+      const auth = { type: at };
+      if (at === "bearer") auth.token_env = ae || "REQUIRED_TOKEN_ENV";
+      else auth.api_key_env = ae || "REQUIRED_API_KEY_ENV";
+      body.auth = auth;
+    }
+    const inc = csv($("r_inc").value), exc = csv($("r_exc").value);
+    if (inc.length || exc.length) body.filters = { include: inc, exclude: exc };
+    if ($("r_maxt").value.trim()) body.max_tools = num($("r_maxt").value, 0);
+    if ($("r_tmo").value.trim()) body.timeout_s = num($("r_tmo").value, 30);
+    const tpl = $("r_tpl").value.trim(); if (tpl) body.response_template = tpl;
+    const al = csv($("r_allow").value); if (al.length) body.allowed_tools = al;
+    if (!body.name) throw new Error("服务名必填");
+    if (!body.spec && !body.spec_url) throw new Error("spec 与 spec_url 至少填一个");
+  } else {
+    body.name = $("d_name").value.trim();
+    const t = $("d_title").value.trim(); if (t) body.title = t;
+    const db = { url_env: $("d_urlenv").value.trim() };
+    const sc = $("d_schema").value.trim(); if (sc) db.schema = sc;
+    const inc = csv($("d_inc").value), exc = csv($("d_exc").value);
+    if (inc.length) db.include_tables = inc;
+    if (exc.length) db.exclude_tables = exc;
+    if ($("d_maxr").value.trim()) db.max_rows = num($("d_maxr").value, 200);
+    if ($("d_tmo").value.trim()) db.timeout_s = num($("d_tmo").value, 15);
+    body.db = db;
+    if (!body.name) throw new Error("服务名必填");
+    if (!db.url_env) throw new Error("DSN 环境变量名必填（只填名字，值配在网关环境）");
+  }
+  return body;
+}
+
+$("btnPreview").onclick = async () => {
+  let body;
+  try { body = collectForm(); } catch (e) { toast(e.message, "err"); return; }
+  try {
+    const r = await api("/services/preview", { method: "POST", body: JSON.stringify(body) });
+    $("pvOut").style.display = "";
+    const lines = [`工具 ${r.tool_count} 个：${(r.tools || []).map(t => t.name || t).join(" · ")}`];
+    (r.warnings || []).forEach(w => lines.push("⚠ " + w));
+    if (r.template_preview) lines.push("\n模板预览：\n" + JSON.stringify(r.template_preview, null, 2));
+    $("pvTxt").textContent = lines.join("\n");
+  } catch (e) { toast("预检失败：" + e.message, "err"); }
+};
+
+$("btnCreate").onclick = async () => {
+  let body;
+  try { body = collectForm(); } catch (e) { toast(e.message, "err"); return; }
+  const btn = $("btnCreate"); btn.disabled = true; btn.textContent = "注册中…";
+  try {
+    const r = await api("/services", { method: "POST", body: JSON.stringify(body) });
+    closeDlg("mReg");
+    showKey("注册成功 · " + r.name, r);
+    loadServices();
+  } catch (e) { toast("注册失败：" + e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = "注册"; }
+};
+
+function showKey(title, r) {
+  $("kTitle").textContent = title;
+  $("kKey").textContent = r.api_key || "";
+  $("kUrl").textContent = r.mcp_url || "";
+  $("kCmd").textContent = r.claude_code_cmd || "";
+  $("kTools").textContent = (r.tools || []).join("\n");
+  $("kWarn").innerHTML = (r.warnings || []).map(w => `<div style="color:var(--warn);font-size:12.5px;margin-top:8px">⚠ ${esc(w)}</div>`).join("");
+  const bk = $("kCopyKey"), bc = $("kCopyCmd");
+  bk.dataset.orig = "复制 key"; bc.dataset.orig = "复制接入命令";
+  bk.textContent = bk.dataset.orig; bc.textContent = bc.dataset.orig;
+  openDlg("mKey");
+}
+$("kCopyKey").onclick = () => copy($("kKey").textContent, $("kCopyKey"));
+$("kCopyCmd").onclick = () => copy($("kCmd").textContent, $("kCopyCmd"));
+
+/* ---------------- 详情 ---------------- */
+let CUR = null;
+async function openDetail(name) {
+  try {
+    const [info, calls] = await Promise.all([
+      api("/services/" + encodeURIComponent(name)),
+      api("/services/" + encodeURIComponent(name) + "/calls?limit=20"),
+    ]);
+    CUR = info;
+    const dupTitle = info.title && info.title.startsWith(info.name);
+    $("dtName").textContent = info.name + (info.title && !dupTitle ? " · " + info.title : "");
+    $("dtKv").innerHTML = `
+      <div class="cell"><div class="kk">类型</div><div class="vv"><span class="pill ${esc(info.kind)}"><span class="pdot"></span>${esc(info.kind)}</span></div></div>
+      <div class="cell"><div class="kk">工具数</div><div class="vv num">${info.tool_count}</div></div>
+      <div class="cell"><div class="kk">目标</div><div class="vv mono">${esc(info.base_url || "")}</div></div>
+      <div class="cell"><div class="kk">负责人</div><div class="vv">${esc(info.owner || "—")}</div></div>
+      <div class="cell"><div class="kk">MCP 端点</div>
+        <div class="vv mono" style="display:flex;align-items:center;gap:8px">
+          <span>${esc(BASE + "/mcp/" + info.name)}</span>
+          <button class="cp" title="复制端点" onclick="copy('${esc(BASE + "/mcp/" + info.name)}')">复制</button>
+        </div></div>
+      <div class="cell"><div class="kk">更新时间</div><div class="vv mono num">${esc((info.updated_at || "").replace("T", " ").slice(0, 19))}</div></div>
+      ${info.allowed_tools && info.allowed_tools.length ? `<div class="cell" style="grid-column:1/-1"><div class="kk">白名单</div><div class="vv mono">${esc(info.allowed_tools.join(", "))}</div></div>` : ""}`;
+    $("dtToolN").textContent = (info.tools || []).length;
+    $("dtTools").innerHTML = (info.tools || []).map(t =>
+      `<div class="tool"><div class="tn">${esc(t.name)}<span class="req">必填：${esc((t.required || []).join(", ") || "无")}</span></div>
+       <div class="td">${esc(t.description || "")}</div></div>`).join("");
+    $("dtCalls").innerHTML = calls.count
+      ? `<div class="tscroll"><div class="card"><table class="mini"><thead><tr><th>时间</th><th>工具</th><th>状态</th><th>耗时</th><th>说明</th></tr></thead><tbody>${
+          calls.calls.map(c => `<tr>
+            <td class="when num">${esc((c.ts || "").slice(11))}</td>
+            <td class="mono" style="font-size:12px">${esc(c.tool)}</td>
+            <td>${c.status === "ok" ? '<span class="st-ok">ok</span>'
+                : `<span class="st-bad">${esc(c.status)}${c.error_code ? " · " + c.error_code : ""}</span>`}</td>
+            <td class="num-cell num">${esc(c.duration_ms ?? "")} ms</td>
+            <td class="dim mono" style="font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.message || "")}</td>
+          </tr>`).join("")}</tbody></table></div></div>`
+      : '<div class="pvbox">暂无调用记录</div>';
+    $("dtHealthOut").style.display = "none";
+    openDlg("mDetail");
+  } catch (e) { if (e.message !== "401") toast("加载详情失败：" + e.message, "err"); }
+}
+window.openDetail = openDetail;
+
+$("dtHealth").onclick = async () => {
+  if (!CUR) return;
+  try {
+    const h = await api("/services/" + encodeURIComponent(CUR.name) + "/health");
+    $("dtHealthOut").style.display = "";
+    $("dtHealthTxt").innerHTML = Object.entries(h).filter(([k]) => k !== "checked_at")
+      .map(([k, v]) => {
+        const sv = typeof v === "object" ? JSON.stringify(v) : String(v);
+        const cls = k === "ok" || k === "reachable" ? (v ? "good" : "bad") : "";
+        return `<span class="${cls}">${k}: ${esc(sv)}</span>`;
+      }).join("\n");
+  } catch (e) { toast("探测失败：" + e.message, "err"); }
+};
+
+$("dtRotate").onclick = async () => {
+  if (!CUR || !confirm(`确定轮换 ${CUR.name} 的 key？旧 key 立即失效，使用方需更新。`)) return;
+  try {
+    const r = await api("/services/" + encodeURIComponent(CUR.name) + "/rotate-key", { method: "POST" });
+    closeDlg("mDetail");
+    showKey("key 已轮换 · " + r.name, { ...r, mcp_url: BASE + "/mcp/" + r.name,
+      claude_code_cmd: `claude mcp add --transport http ${r.name} ${BASE}/mcp/${r.name} --header 'X-Api-Key: ${r.api_key}'`,
+      tools: (CUR.tools || []).map(t => t.name), warnings: [] });
+  } catch (e) { toast("轮换失败：" + e.message, "err"); }
+};
+
+$("dtDel").onclick = async () => {
+  if (!CUR) return;
+  const n = prompt(`删除服务 ${CUR.name}？此操作不可恢复（落盘记录一并删除）。\n输入服务名确认：`);
+  if (n !== CUR.name) { if (n !== null) toast("输入的服务名不匹配，已取消", "err"); return; }
+  try {
+    await api("/services/" + encodeURIComponent(CUR.name), { method: "DELETE" });
+    closeDlg("mDetail"); toast("已删除 " + CUR.name, "ok"); loadServices();
+  } catch (e) { toast("删除失败：" + e.message, "err"); }
+};
+
+/* ---------------- 启动 ---------------- */
+$("tok").value = TOKEN;
+loadAll();
+setInterval(pingGateway, 30000);
+</script>
+</body>
+</html>

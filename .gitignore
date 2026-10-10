@@ -1,0 +1,36 @@
+# venv
+.venv/
+venv/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# 测试与工具缓存
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 网关运行时数据（注册服务落盘目录）
+data/
+logs/
+
+# 部署凭据
+deploy/admin_token
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+
+# 系统
+.DS_Store
+deploy/pg.env
+
+# 本地调试脚本与截图（不入库）
+.debug/
+# 构建产物
+src/*.egg-info/

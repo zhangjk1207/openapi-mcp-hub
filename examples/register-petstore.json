@@ -1,0 +1,17 @@
+{
+  "name": "petstore",
+  "title": "Petstore 示例",
+  "spec_url": "examples/petstore-openapi.json",
+  "base_url": "http://127.0.0.1:20034",
+  "auth": {
+    "type": "bearer",
+    "token_env": "DEMO_PETSTORE_TOKEN"
+  },
+  "filters": {
+    "exclude": ["/internal/*"]
+  },
+  "tool_response_templates": {
+    "get_pet_by_id": "宠物 {{response.name}}（id={{response.id}}，{{response.tag}}）"
+  },
+  "owner": "zhangjikang"
+}
