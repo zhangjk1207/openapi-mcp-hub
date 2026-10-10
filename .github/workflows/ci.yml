@@ -43,8 +43,8 @@ jobs:
           MYSQL_DATABASE: hub_test
         ports: ["3306:3306"]
         options: >-
-          --health-cmd "mysqladmin ping -phub"
-          --health-interval 5s --health-timeout 5s --health-retries 12
+          --health-cmd "mysql -h127.0.0.1 -phub -e 'SELECT 1'"
+          --health-interval 10s --health-timeout 5s --health-retries 10
     env:
       OMH_PG_TEST_DSN: postgresql://hub:hub@127.0.0.1:5432/hub_test
       OMH_MYSQL_TEST_DSN: mysql://root:hub@127.0.0.1:3306/hub_test
