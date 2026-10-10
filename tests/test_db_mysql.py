@@ -9,6 +9,7 @@
 import asyncio
 import json
 import os
+from urllib.parse import unquote, urlparse
 
 import httpx
 import pytest
@@ -22,9 +23,6 @@ pytestmark = pytest.mark.skipif(
 
 if DSN:
     os.environ["OMH_MYSQL_URL"] = DSN
-
-from urllib.parse import unquote, urlparse
-
 
 def _dsn_parts():
     """从 OMH_MYSQL_TEST_DSN 解析连接参数（host/port/user/password/db）。"""
@@ -214,7 +212,7 @@ async def test_persistence_recovery_and_health(toy_tables, tmp_path):
         ServiceRegistration(name="toys-db", db={"url_env": "OMH_MYSQL_URL", "max_rows": 3})
     )
     rec = reg1.get("toys-db").record
-    assert rec["db"]["db_schema"] == "a2m_test"  # MySQL：库名回写落盘
+    assert rec["db"]["db_schema"] == _dsn_parts()["db"]  # MySQL：库名回写落盘
     await reg1.shutdown()
 
     app2 = create_app(GatewayConfig(admin_token="t", data_dir=tmp_path))
