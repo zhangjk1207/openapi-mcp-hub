@@ -2,7 +2,7 @@
 
 **Turn any OpenAPI spec — or a live PostgreSQL / MySQL database — into production-ready MCP endpoints. One process. One port. Zero code.**
 
-[![CI](https://github.com/PLACEHOLDER/openapi-mcp-hub/actions/workflows/ci.yml/badge.svg)](../../actions)
+[![CI](https://github.com/zhangjk1207/openapi-mcp-hub/actions/workflows/ci.yml/badge.svg)](../../actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-6e7bf4.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg)](pyproject.toml)
 [![中文文档](https://img.shields.io/badge/README-中文-red.svg)](README.zh-CN.md)
@@ -42,7 +42,7 @@ No wrapper code. No per-spec deployment. No port sprawl. Register as many servic
 ## Quickstart
 
 ```bash
-git clone https://github.com/PLACEHOLDER/openapi-mcp-hub && cd openapi-mcp-hub
+git clone https://github.com/zhangjk1207/openapi-mcp-hub && cd openapi-mcp-hub
 docker compose up          # gateway + demo mock API, auto-registers a petstore service
 ```
 
