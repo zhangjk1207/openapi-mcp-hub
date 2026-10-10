@@ -42,19 +42,37 @@ No wrapper code. No per-spec deployment. No port sprawl. Register as many servic
                                              per-service api_key
 ```
 
-## Quickstart
+## Quickstart — 60 seconds
 
 ```bash
 git clone https://github.com/zhangjk1207/openapi-mcp-hub && cd openapi-mcp-hub
-docker compose up          # gateway + demo mock API, auto-registers a petstore service
+docker compose up -d       # gateway + PostgreSQL + demo API, auto-registers a petstore service
 ```
 
-Open **http://localhost:20033** — the built-in admin console loads (paste the admin token printed on first boot, saved in `deploy/admin_token`). You should see the demo service listed.
+Open **http://localhost:20033** and paste the demo admin token: `demo-admin-token` — the console shows a ready-to-use `petstore` service (fixed demo key, listed below).
 
-Register your own API:
+Try the agent-callable endpoint right away:
 
 ```bash
-ADMIN_TOKEN=$(cat deploy/admin_token)
+curl -X POST http://localhost:20033/mcp/petstore \
+  -H "X-Api-Key: psk-demo-petstore-key" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_pets","arguments":{"limit":3}}}'
+```
+
+And in Claude Code:
+
+```bash
+claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
+  --header "X-Api-Key: psk-demo-petstore-key"
+```
+
+> The demo mode (`OPENAPI_MCP_HUB_DEMO=1` in `docker-compose.yml`) uses a fixed, publicly-documented key for a friction-free tour. Turn it off (and change `OPENAPI_MCP_HUB_ADMIN_TOKEN`) before any real use — real registrations always mint a fresh one-time key.
+
+### Register your own API
+
+```bash
+ADMIN_TOKEN=demo-admin-token
 
 # spec_text receives the raw file content (JSON or YAML)
 jq -n --rawfile s your-openapi.json '{name:"my-api", base_url:"https://api.example.com", spec_text:$s}' | \

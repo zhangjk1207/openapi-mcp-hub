@@ -81,4 +81,4 @@ def delete_pet(pet_id: int, authorization: str | None = Header(None)) -> dict:
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", "20034"))
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+    uvicorn.run(app, host=os.environ.get("HOST", "0.0.0.0"), port=port, log_level="info")

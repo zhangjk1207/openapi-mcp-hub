@@ -91,7 +91,32 @@ python -m pytest tests/      # 78 个用例：单测 + respx mock + e2e（真实
 
 适配说明：基于 mcp SDK **2.x**（2.3+）——lowlevel `Server` 构造器注入 `on_list_tools`/`on_call_tool` 回调、types 为 snake_case、入参校验由网关用 jsonschema 按 inputSchema 自行执行（2.x 不再内置校验）。运行环境使用项目独立 venv（`python -m venv .venv && .venv/bin/pip install -e ".[dev]"`），不影响机器上其他项目的共享环境。
 
-### 部署（常驻）
+### 60 秒体验（Docker 一键编排）
+
+```bash
+git clone https://github.com/zhangjk1207/openapi-mcp-hub && cd openapi-mcp-hub
+docker compose up -d       # 网关 + PostgreSQL + 演示 API，自动注册 petstore 演示服务
+```
+
+打开 **http://localhost:20033**，输入演示管理 token：`demo-admin-token` —— 控制台里已有一个可直接使用的 `petstore` 服务。立刻体验 agent 可调用的端点：
+
+```bash
+curl -X POST http://localhost:20033/mcp/petstore \
+  -H "X-Api-Key: psk-demo-petstore-key" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_pets","arguments":{"limit":3}}}'
+```
+
+接入 Claude Code：
+
+```bash
+claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
+  --header "X-Api-Key: psk-demo-petstore-key"
+```
+
+> 演示模式（compose 里的 `OPENAPI_MCP_HUB_DEMO=1`）使用固定公开的演示 key，只为零摩擦上手。正式使用前请关闭演示模式并修改 `OPENAPI_MCP_HUB_ADMIN_TOKEN`——真实注册永远返回一次性随机 key。
+
+### 部署（常驻，无 Docker）
 
 ```bash
 # ① 启动网关（0.0.0.0:20033；首次自动生成并保存管理 token 到 deploy/admin_token）

@@ -1,0 +1,231 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Petstore 示例 API",
+    "version": "1.0.0",
+    "description": "openapi-mcp-hub 示例：用于验证 openapi -> MCP 全链路"
+  },
+  "servers": [
+    {
+      "url": "http://petstore.example.com"
+    }
+  ],
+  "paths": {
+    "/pets": {
+      "get": {
+        "operationId": "listPets",
+        "summary": "查询宠物列表",
+        "tags": [
+          "pets"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "返回数量上限",
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "按状态过滤",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "available",
+                "pending",
+                "sold"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "宠物列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Pet"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPet",
+        "summary": "新增宠物",
+        "tags": [
+          "pets"
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "宠物信息",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPet"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pet"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pets/{petId}": {
+      "get": {
+        "operationId": "getPetById",
+        "summary": "按 ID 查询宠物",
+        "tags": [
+          "pets"
+        ],
+        "parameters": [
+          {
+            "name": "petId",
+            "in": "path",
+            "required": true,
+            "description": "宠物 ID",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "宠物详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pet"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "不存在"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePetById",
+        "summary": "删除宠物",
+        "tags": [
+          "pets"
+        ],
+        "parameters": [
+          {
+            "name": "petId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "删除成功"
+          }
+        }
+      }
+    },
+    "/internal/metrics": {
+      "get": {
+        "operationId": "internalMetrics",
+        "summary": "内部监控（示例：注册时用 filters 排除）",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/whoami": {
+      "get": {
+        "summary": "回显网关注入的认证头（演示凭证注入效果）",
+        "operationId": "whoami",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Pet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "pending",
+              "sold"
+            ]
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "NewPet": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "宠物名"
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    }
+  }
+}

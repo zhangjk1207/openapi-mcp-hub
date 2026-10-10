@@ -41,6 +41,9 @@ openapi-mcp-hub = "openapi_mcp_hub.main:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+openapi_mcp_hub = ["demo_spec.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

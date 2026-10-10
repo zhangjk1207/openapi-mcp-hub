@@ -1,26 +1,63 @@
+# openapi-mcp-hub 一键演示编排：gateway + PostgreSQL 持久化 + petstore mock
+#
+#   docker compose up -d
+#   打开 http://localhost:20033（管理 token：demo-admin-token，可用环境变量覆盖）
+#
+# 演示服务自动注册（OPENAPI_MCP_HUB_DEMO=1）：
+#   - MCP 端点  http://localhost:20033/mcp/petstore
+#   - 固定演示 key  psk-demo-petstore-key（仅演示模式；生产请勿开启 DEMO）
+#
+# 生产提示：改掉默认 admin token、去掉 DEMO 与 petstore-mock、按需改库密码。
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: hub
+      POSTGRES_DB: hub
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  petstore-mock:
+    build: .
+    image: openapi-mcp-hub:latest
+    command: ["python", "demo/petstore_mock.py"]
+    environment:
+      DEMO_PETSTORE_TOKEN: demo-secret-token
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:20034/healthz')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
   gateway:
     build: .
     image: openapi-mcp-hub:latest
     ports:
       - "20033:20033"
     environment:
-      # 管理面静态 token（必填；不设则管理面 503）
-      OPENAPI_MCP_HUB_ADMIN_TOKEN: ${OPENAPI_MCP_HUB_ADMIN_TOKEN:?请先 export OPENAPI_MCP_HUB_ADMIN_TOKEN=...}
-      # 目标 API 凭证按各服务注册时的 *_env 名注入，例如：
-      # GRANDE_TOKEN: xxx
-      # DEMO_PETSTORE_TOKEN: demo-secret-token
+      # 管理面 token：默认演示值，正式使用必须覆盖（export OPENAPI_MCP_HUB_ADMIN_TOKEN=...）
+      OPENAPI_MCP_HUB_ADMIN_TOKEN: ${OPENAPI_MCP_HUB_ADMIN_TOKEN:-demo-admin-token}
+      OPENAPI_MCP_HUB_DATABASE_URL: postgresql://hub:hub@postgres:5432/hub
+      # 演示模式：启动后自动注册 petstore（固定 key，见顶部说明）
+      OPENAPI_MCP_HUB_DEMO: "1"
+      OPENAPI_MCP_HUB_DEMO_API_URL: http://petstore-mock:20034
+      DEMO_PETSTORE_TOKEN: demo-secret-token
+    depends_on:
+      postgres:
+        condition: service_healthy
+      petstore-mock:
+        condition: service_healthy
     volumes:
-      - ./data:/app/data # 已注册服务落盘（重启自动恢复）
+      - ./data:/app/data # 文件模式兜底/迁移源；pg 为主存储
     restart: unless-stopped
 
-  # 可选：petstore 演示目标 API（真实使用时删掉本段）
-  petstore-mock:
-    build: .
-    image: openapi-mcp-hub:latest
-    command: ["python", "demo/petstore_mock.py"]
-    ports:
-      - "20034:20034"
-    environment:
-      DEMO_PETSTORE_TOKEN: demo-secret-token
-    restart: unless-stopped
+volumes:
+  pgdata:

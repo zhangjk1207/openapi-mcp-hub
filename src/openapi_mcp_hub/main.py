@@ -38,6 +38,8 @@ def create_app(cfg: GatewayConfig | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         await registry.connect_store()  # pg 建表/自动迁移；失败则启动退出（fail fast）
         restored = await registry.load_from_store()
+        from .demo import maybe_register_demo
+        await maybe_register_demo(registry)
         logger.info("openapi-mcp-hub %s 就绪（恢复 %d 个服务）", __version__, len(restored))
         yield
         await registry.shutdown()

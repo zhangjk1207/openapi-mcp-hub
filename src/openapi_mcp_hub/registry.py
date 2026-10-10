@@ -97,12 +97,21 @@ class Registry:
 
     # ------------------------------------------------------------ 生命周期操作
 
-    async def register(self, reg: ServiceRegistration) -> tuple[RunningService, str, list[str]]:
-        """注册新服务；返回 (service, api_key 明文, warnings)。"""
+    async def register(
+        self, reg: ServiceRegistration, *, key: str | None = None
+    ) -> tuple[RunningService, str, list[str]]:
+        """注册新服务；返回 (service, api_key 明文, warnings)。
+
+        key：内部通道（demo 固定演示 key）；None 则随机生成。
+        """
         async with self._lock:
             if reg.name in self._services:
                 raise ServiceConflictError(f"服务 {reg.name} 已存在；覆盖请使用 PUT /services/{reg.name}")
-            plain_key, key_hash = new_api_key()
+            if key is not None:
+                plain_key = key
+                key_hash = hashlib.sha256(key.encode()).hexdigest()
+            else:
+                plain_key, key_hash = new_api_key()
             svc, warnings = await self._build_service(reg, key_hash=key_hash)
             record = svc.record
             record["created_at"] = _now()
