@@ -7,6 +7,9 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg)](pyproject.toml)
 [![中文文档](https://img.shields.io/badge/README-中文-red.svg)](README.zh-CN.md)
 
+![demo](docs/demo.gif)
+
+
 POST an `openapi.json` to the gateway and you instantly get an MCP endpoint any agent can call:
 
 ```

@@ -13,6 +13,8 @@
 >
 > 📖 **怎么用看 [USAGE.md](USAGE.md)**：注册方接入指南（REST + 数据库）+ agent 使用方接入指南 + 报错速查表。
 
+![demo](docs/demo.gif)
+
 ---
 
 ## 1. 背景与目标
