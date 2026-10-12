@@ -26,7 +26,12 @@
 html{color-scheme:dark}
 body{margin:0;background:var(--bg);color:var(--fg);
   font:14px/1.6 system-ui,-apple-system,"Segoe UI","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+  font-variant-numeric:tabular-nums;
   -webkit-font-smoothing:antialiased}
+/* 顶部灯光：几乎不可察觉的 indigo 光晕，消除纯平涂黑的"死"感 */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(1200px 420px at 18% -8%,rgba(110,123,244,.055),transparent 60%)}
+:focus-visible{outline:2px solid #818cf8;outline-offset:2px;border-radius:4px}
 ::selection{background:var(--acc);color:#fff}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:#2a3348;border-radius:8px;border:2px solid var(--bg)}
@@ -56,10 +61,16 @@ header{position:sticky;top:0;z-index:50;height:58px;display:flex;align-items:cen
 .gw{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dim);
   padding:5px 12px;border:1px solid var(--line);border-radius:20px;background:var(--surface)}
 .gw .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
-.gw.ok .dot{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.gw.ok .dot{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.5)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 3px var(--ok-soft)}}
 .gw.err .dot{background:var(--err);box-shadow:0 0 0 3px var(--err-soft)}
 header .spacer{flex:1}
-.tokwrap{display:flex;align-items:center;gap:8px}
+.tokwrap{display:flex;align-items:center;gap:8px;position:relative}
+.tokpop{position:absolute;right:0;top:calc(100% + 10px);display:none;gap:8px;align-items:center;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-m);
+  padding:10px;box-shadow:var(--sh-3);z-index:50;width:300px}
+.tokpop.open{display:flex}
+.tokpop input{flex:1;min-width:0}
 .tokwrap input{width:230px;background:var(--surface);border:1px solid var(--line);
   border-radius:var(--r-s);padding:7px 11px;color:var(--fg);font-size:13px;
   transition:border-color var(--t),box-shadow var(--t)}
@@ -77,8 +88,17 @@ header .spacer{flex:1}
 .btn.pri{background:linear-gradient(180deg,#7883f8,#6370ee);border-color:#6d78f2;color:#fff;
   box-shadow:0 1px 0 rgba(255,255,255,.18) inset, 0 2px 8px rgba(110,123,244,.3)}
 .btn.pri:hover{filter:brightness(1.08)}
-.btn.danger{background:transparent;border-color:rgba(248,113,113,.4);color:var(--err)}
-.btn.danger:hover{background:var(--err-soft);border-color:var(--err)}
+.btn.danger{background:transparent;border-color:rgba(248,113,113,.4);color:var(--err);margin-left:28px!important}
+.btn.danger:hover{background:rgba(248,113,113,.14);border-color:var(--err)}
+.f input.err,.f select.err,.f textarea.err{border-color:var(--err)!important;
+  box-shadow:0 0 0 3px var(--err-soft)!important}
+.hint summary{cursor:pointer;font-size:12px;color:var(--dim);user-select:none;
+  padding:4px 0;transition:color var(--t);list-style:none}
+.hint summary::before{content:"ⓘ ";}
+.hint summary::-webkit-details-marker{display:none}
+.hint summary:hover{color:var(--fg)}
+.f-err{color:#fca5a5;font-size:12.5px;margin-top:5px;line-height:1.5}
+.f input[type=number]{text-align:right}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--dim)}
 .btn.ghost:hover{background:var(--surface-2);color:var(--fg);border-color:var(--line)}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
@@ -107,11 +127,12 @@ main{max-width:1120px;margin:0 auto;padding:28px 22px 60px}
 table{width:100%;border-collapse:collapse}
 th{font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--dim);
   text-align:left;padding:11px 16px;background:var(--surface-2);border-bottom:1px solid var(--line-soft)}
-td{padding:13px 16px;border-bottom:1px solid var(--line-soft);font-size:13.5px;vertical-align:middle}
+td{padding:11px 16px;border-bottom:1px solid var(--line-soft);font-size:13.5px;vertical-align:middle}
 tbody tr:last-child td{border-bottom:none}
 tbody tr.row{cursor:pointer;transition:background var(--t)}
-tbody tr.row:hover{background:var(--surface-2)}
-td b.svc{font-weight:600;font-size:14px}
+tbody tr.row:hover{background:rgba(134,150,199,.085)}
+td b.svc{font-weight:600;font-size:14px;transition:color var(--t)}
+tr.row:hover b.svc{color:var(--acc-hi)}
 td .svc-sub{font-size:12px;color:var(--dim);margin-top:1px}
 .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:550;
   padding:3px 10px;border-radius:20px}
@@ -122,8 +143,8 @@ td.num-cell{font-family:var(--mono);font-size:13px;color:var(--fg-mid)}
 td .tgt{font-family:var(--mono);font-size:12px;color:var(--dim);max-width:280px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
 td .when{font-family:var(--mono);font-size:12px;color:var(--dim)}
-tr.row .chev{color:var(--dim);transition:transform var(--t)}
-tr.row:hover .chev{color:var(--dim);transform:translateX(2px)}
+tr.row .chev{color:var(--faint);opacity:.5;transition:all .18s ease}
+tr.row:hover .chev{color:var(--acc-hi);opacity:1;transform:translateX(4px)}
 
 /* 列表行入场 stagger */
 @keyframes rowIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
@@ -149,7 +170,8 @@ tbody tr.row:nth-child(n+6){animation-delay:.27s}
   width:680px;max-width:100%;max-height:84vh;display:flex;flex-direction:column;
   box-shadow:var(--sh-3);animation:pop var(--t) ease-out}
 .dlg.wide{width:800px}
-.dlg-head{display:flex;align-items:center;gap:12px;padding:16px 20px 14px;border-bottom:1px solid var(--line-soft)}
+.dlg-head{display:flex;align-items:center;gap:12px;padding:16px 20px 14px;border-bottom:1px solid var(--line-soft);
+  position:sticky;top:0;background:var(--surface);z-index:2}
 .dlg-head h2{margin:0;font-size:16px;font-weight:650;flex:1}
 .dlg-head .x{width:28px;height:28px;border-radius:var(--r-s);border:none;background:transparent;
   color:var(--dim);cursor:pointer;display:grid;place-items:center;transition:all var(--t)}
@@ -166,7 +188,8 @@ tbody tr.row:nth-child(n+6){animation-delay:.27s}
   border-radius:var(--r-s);padding:3px;gap:2px;margin-bottom:18px}
 .seg button{border:none;background:transparent;color:var(--dim);font-size:13px;font-weight:550;
   padding:6px 16px;border-radius:5px;cursor:pointer;transition:all var(--t)}
-.seg button.on{background:#252f47;color:#fff;box-shadow:var(--sh-1), 0 0 0 1px rgba(110,123,244,.55)}
+.seg button.on{background:rgba(110,123,244,.18);color:#c7d2fe;
+  box-shadow:inset 0 0 0 1px rgba(110,123,244,.45)}
 
 /* ================= 表单 ================= */
 .fset{margin-bottom:14px}
@@ -215,22 +238,42 @@ a.tag-doc:hover{text-decoration:underline}
   color:var(--faint);margin:10px 0 6px}
 
 /* ================= 详情 ================= */
-.kvgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 18px;margin-bottom:4px}
-.kvgrid .cell{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:var(--r-s);
-  padding:8px 12px}
+.kvgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:0 22px;margin:0 0 4px;
+  border:1px solid var(--line-soft);border-radius:var(--r-m);overflow:hidden}
+.kvgrid .cell{background:transparent;border:none;border-top:1px solid var(--line-soft);
+  padding:10px 14px}
+.kvgrid .cell:nth-child(1),.kvgrid .cell:nth-child(2){border-top:none}
 .kvgrid .cell .kk{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
 .kvgrid .cell .vv{font-size:13px;font-weight:550}
 .kvgrid .cell .vv.mono{font-size:12.5px;font-weight:400}
+/* MCP 端点条：核心动线的视觉锚点（accent tint + 复制） */
+.epbar{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:11px 14px;
+  background:rgba(110,123,244,.09);border:1px solid rgba(110,123,244,.28);
+  border-radius:var(--r-m)}
+.epbar .lbl{font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;
+  color:#a5b0fc;flex:none}
+.epbar code{flex:1;font-family:var(--mono);font-size:13px;color:#c7d2fe;
+  word-break:break-all;user-select:all}
 .dsect{margin-top:18px}
 .dsect h3{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;
   letter-spacing:1.2px;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
 .dsect h3 .n{background:var(--surface-3);border:1px solid var(--line);border-radius:10px;
   padding:0 7px;font-size:11px;color:var(--dim)}
-.tool{display:flex;flex-direction:column;gap:2px;padding:10px 12px;background:var(--surface-2);
-  border:1px solid var(--line-soft);border-radius:var(--r-s);margin-bottom:8px}
+.tool{display:flex;flex-direction:column;gap:2px;padding:6px 4px 9px 14px;background:transparent;
+  border:none;border-left:2px solid var(--line);border-radius:0;margin-bottom:6px;
+  transition:border-color var(--t)}
+.tool:hover{border-left-color:var(--acc)}
 .tool .tn{font-family:var(--mono);font-size:13px;font-weight:550;color:#a5b0fc}
 .tool .tn .req{color:var(--faint);font-weight:400;font-size:12px;margin-left:8px}
 .tool .td{font-size:12.5px;color:var(--dim);line-height:1.55;max-height:60px;overflow:hidden}
+.tool .td code,.pvbox code,.f-err code{font-family:var(--mono);font-size:.92em;color:#c3cadb;
+  background:var(--surface-3);border-radius:4px;padding:1px 5px}
+/* 空状态：教育用户的免费广告位 */
+.empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;
+  text-align:center}
+.empty .eic{font-size:26px;opacity:.75;filter:saturate(.7)}
+.empty p{margin:0;font-size:13.5px;color:var(--fg-mid)}
+.empty .esub{font-size:12px;color:var(--dim);max-width:40ch;line-height:1.6}
 .hbox{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-m);padding:12px 14px;
   font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;line-height:1.7;color:var(--fg-mid)}
 .hbox .good{color:var(--ok)} .hbox .bad{color:var(--err)}
@@ -268,13 +311,14 @@ table.mini td{padding:8px 12px;font-size:12.5px}
 }
 
 /* ================= toast ================= */
-#toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%) translateY(20px);z-index:200;
+#toast{position:fixed;right:24px;bottom:24px;transform:translateY(20px);z-index:200;
   display:flex;align-items:center;gap:9px;background:var(--surface-3);border:1px solid var(--line);
   border-radius:var(--r-m);padding:10px 18px;font-size:13.5px;box-shadow:var(--sh-3);
-  opacity:0;pointer-events:none;transition:all .25s cubic-bezier(.34,1.4,.64,1)}
-#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-#toast.ok{border-color:rgba(52,211,153,.4)} #toast.ok .ti{color:var(--ok)}
-#toast.err{border-color:rgba(248,113,113,.45)} #toast.err .ti{color:var(--err)}
+  opacity:0;pointer-events:none;transition:all .25s cubic-bezier(.34,1.4,.64,1);
+  max-width:420px}
+#toast.show{opacity:1;transform:translateY(0)}
+#toast.ok{border-left:3px solid var(--ok)} #toast.ok .ti{color:var(--ok)}
+#toast.err{border-left:3px solid var(--err)} #toast.err .ti{color:var(--err)}
 #toast .ti{font-size:15px;line-height:1}
 </style>
 </head>
@@ -289,8 +333,11 @@ table.mini td{padding:8px 12px;font-size:12.5px}
   <span class="gw" id="gw"><span class="dot"></span><span id="gwTxt">检测中…</span></span>
   <span class="spacer"></span>
   <div class="tokwrap">
-    <input id="tok" type="password" placeholder="管理 token" spellcheck="false">
-    <button class="btn" id="saveTok">保存</button>
+    <button class="btn ghost" id="tokBtn" title="管理 token" aria-label="管理 token">🔑</button>
+    <div class="tokpop" id="tokPop">
+      <input id="tok" type="password" placeholder="管理 token" spellcheck="false">
+      <button class="btn pri" id="saveTok">保存</button>
+    </div>
   </div>
 </header>
 
@@ -383,7 +430,8 @@ table.mini td{padding:8px 12px;font-size:12.5px}
           <div><label>timeout_s</label><input id="d_tmo" type="number" placeholder="15"></div>
         </div>
       </div>
-      <div class="pvbox" style="margin:0">生成固定三件套工具 list_tables / describe_table / query。<br>写语句（INSERT / UPDATE / DELETE / DDL）一律拦截并返回 -32602。</div>
+      <details class="hint"><summary>生成哪些工具？写操作如何被拦截？</summary>
+      <div class="pvbox" style="margin:8px 0 0">生成固定三件套工具 list_tables / describe_table / query。<br>写语句（INSERT / UPDATE / DELETE / DDL）一律拦截并返回 -32602。</div></details>
     </div>
 
     <div id="pvOut" class="fset" style="display:none">
@@ -433,6 +481,8 @@ table.mini td{padding:8px 12px;font-size:12.5px}
   <div class="dlg-head"><h2 id="dtName"></h2>
     <button class="x" aria-label="关闭" onclick="closeDlg('mDetail')"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
   <div class="dlg-body">
+    <div class="epbar"><span class="lbl">MCP 端点</span><code id="dtEpUrl"></code>
+      <button class="cp" id="dtEpCopy">复制</button></div>
     <div class="kvgrid" id="dtKv"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="btn" id="dtHealth">健康探测</button>
@@ -452,6 +502,46 @@ table.mini td{padding:8px 12px;font-size:12.5px}
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+/* 工具描述里的 `code` 片段渲染成 <code>（esc 先行，无注入风险） */
+const mdCode = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+/* 相对时间：显示刚焟/N 分钟前，title 存完整 ISO */
+function fmtRel(iso) {
+  if (!iso) return ["—", ""];
+  const t = new Date(iso); if (isNaN(t)) return [iso, iso];
+  const d = (Date.now() - t) / 1000;
+  if (d < 60) return ["刚刚", iso];
+  if (d < 3600) return [Math.floor(d / 60) + " 分钟前", iso];
+  if (d < 86400) return [Math.floor(d / 3600) + " 小时前", iso];
+  if (d < 7 * 86400) return [Math.floor(d / 86400) + " 天前", iso];
+  return [iso.replace("T", " ").slice(0, 16), iso];
+}
+/* 提交失败时把错误定位到对应字段：高亮 + 滚动 + 自动清染 */
+const ERR_FIELD = [
+  [/环境变量|url_env|未配置/i, "d_urlenv"],
+  [/spec_text|spec_url|spec|解析|json|yaml/i, "r_spec"],
+  [/base_url|目标/i, "r_base"],
+  [/已存在|name|名称/i, "r_name"],
+];
+function markErrField(msg) {
+  for (const [re, id] of ERR_FIELD) {
+    if (!re.test(msg)) continue;
+    const el = $(id); if (!el) return;
+    el.classList.add("err");
+    /* 内联错误文案：紧跟字段，输入即清 */
+    const holder = el.closest("div");
+    holder.querySelectorAll(".f-err").forEach(n => n.remove());
+    const tip = document.createElement("div");
+    tip.className = "f-err"; tip.textContent = "⚠ " + msg;
+    holder.appendChild(tip);
+    el.addEventListener("input", () => {
+      el.classList.remove("err");
+      tip.remove();
+    }, { once: true });
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    return;
+  }
+}
 const BASE = location.origin;
 let TOKEN = localStorage.getItem("omh_admin_token") || "";
 
@@ -478,7 +568,10 @@ function copy(text, btn) {
   const done = ok => {
     if (ok) {
       toast("已复制到剪贴板", "ok");
-      if (btn) { btn.textContent = "已复制 ✓"; setTimeout(() => btn.textContent = btn.dataset.orig, 1800); }
+      if (btn) {
+        if (!btn.dataset.orig) btn.dataset.orig = btn.textContent;
+        btn.textContent = "已复制 ✓"; setTimeout(() => btn.textContent = btn.dataset.orig, 1800);
+      }
     } else toast("复制失败，请点击文本手动选择（已设为全选）", "err");
   };
   if (navigator.clipboard && window.isSecureContext) {
@@ -489,6 +582,11 @@ function copy(text, btn) {
 }
 function closeDlg(id) { $(id).classList.remove("on"); }
 function openDlg(id) { $(id).classList.add("on"); }
+/* 顶栏 token popover */
+$("tokBtn").onclick = e => { e.stopPropagation(); $("tokPop").classList.toggle("open"); $("tok").focus(); };
+document.addEventListener("click", e => {
+  if (!e.target.closest(".tokwrap")) $("tokPop").classList.remove("open");
+});
 document.querySelectorAll(".mask").forEach(m => m.addEventListener("mousedown", e => {
   if (e.target === m) m.classList.remove("on");
 }));
@@ -574,7 +672,7 @@ async function loadServices() {
       <td class="num-cell num">${s.tool_count}</td>
       <td><span class="tgt" title="${esc(s.base_url || "")}">${esc(s.base_url || "")}</span></td>
       <td class="dim">${esc(s.owner || "—")}</td>
-      <td><span class="when num">${esc((s.updated_at || "").replace("T", " ").slice(5, 16))}</span></td>
+      <td><span class="when num" title="${esc(fmtRel(s.updated_at)[1])}">${esc(fmtRel(s.updated_at)[0])}</span></td>
       <td class="chev">›</td>
     </tr>`).join("")}</tbody></table></div></div>`;
 }
@@ -668,7 +766,7 @@ function collectForm() {
 
 $("btnPreview").onclick = async () => {
   let body;
-  try { body = collectForm(); } catch (e) { toast(e.message, "err"); return; }
+  try { body = collectForm(); } catch (e) { toast(e.message, "err"); markErrField(e.message); return; }
   try {
     const r = await api("/services/preview", { method: "POST", body: JSON.stringify(body) });
     $("pvOut").style.display = "";
@@ -681,14 +779,14 @@ $("btnPreview").onclick = async () => {
 
 $("btnCreate").onclick = async () => {
   let body;
-  try { body = collectForm(); } catch (e) { toast(e.message, "err"); return; }
+  try { body = collectForm(); } catch (e) { toast(e.message, "err"); markErrField(e.message); return; }
   const btn = $("btnCreate"); btn.disabled = true; btn.textContent = "注册中…";
   try {
     const r = await api("/services", { method: "POST", body: JSON.stringify(body) });
     closeDlg("mReg");
     showKey("注册成功 · " + r.name, r);
     loadServices();
-  } catch (e) { toast("注册失败：" + e.message, "err"); }
+  } catch (e) { toast("注册失败：" + e.message, "err"); markErrField(e.message); }
   finally { btn.disabled = false; btn.textContent = "注册"; }
 };
 
@@ -718,22 +816,20 @@ async function openDetail(name) {
     CUR = info;
     const dupTitle = info.title && info.title.startsWith(info.name);
     $("dtName").textContent = info.name + (info.title && !dupTitle ? " · " + info.title : "");
+    const [rel, full] = fmtRel(info.updated_at);
+    $("dtEpUrl").textContent = BASE + "/mcp/" + info.name;
+    $("dtEpCopy").onclick = () => copy(BASE + "/mcp/" + info.name, $("dtEpCopy"));
     $("dtKv").innerHTML = `
       <div class="cell"><div class="kk">类型</div><div class="vv"><span class="pill ${esc(info.kind)}"><span class="pdot"></span>${esc(info.kind)}</span></div></div>
       <div class="cell"><div class="kk">工具数</div><div class="vv num">${info.tool_count}</div></div>
       <div class="cell"><div class="kk">目标</div><div class="vv mono">${esc(info.base_url || "")}</div></div>
       <div class="cell"><div class="kk">负责人</div><div class="vv">${esc(info.owner || "—")}</div></div>
-      <div class="cell"><div class="kk">MCP 端点</div>
-        <div class="vv mono" style="display:flex;align-items:center;gap:8px">
-          <span>${esc(BASE + "/mcp/" + info.name)}</span>
-          <button class="cp" title="复制端点" onclick="copy('${esc(BASE + "/mcp/" + info.name)}')">复制</button>
-        </div></div>
-      <div class="cell"><div class="kk">更新时间</div><div class="vv mono num">${esc((info.updated_at || "").replace("T", " ").slice(0, 19))}</div></div>
+      <div class="cell" style="grid-column:1/-1"><div class="kk">更新时间</div><div class="vv mono num" title="${esc(full)}">${esc(rel)}</div></div>
       ${info.allowed_tools && info.allowed_tools.length ? `<div class="cell" style="grid-column:1/-1"><div class="kk">白名单</div><div class="vv mono">${esc(info.allowed_tools.join(", "))}</div></div>` : ""}`;
     $("dtToolN").textContent = (info.tools || []).length;
     $("dtTools").innerHTML = (info.tools || []).map(t =>
       `<div class="tool"><div class="tn">${esc(t.name)}<span class="req">必填：${esc((t.required || []).join(", ") || "无")}</span></div>
-       <div class="td">${esc(t.description || "")}</div></div>`).join("");
+       <div class="td">${mdCode(t.description || "")}</div></div>`).join("");
     $("dtCalls").innerHTML = calls.count
       ? `<div class="tscroll"><div class="card"><table class="mini"><thead><tr><th>时间</th><th>工具</th><th>状态</th><th>耗时</th><th>说明</th></tr></thead><tbody>${
           calls.calls.map(c => `<tr>
@@ -744,7 +840,7 @@ async function openDetail(name) {
             <td class="num-cell num">${esc(c.duration_ms ?? "")} ms</td>
             <td class="dim mono" style="font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.message || "")}</td>
           </tr>`).join("")}</tbody></table></div></div>`
-      : '<div class="pvbox">暂无调用记录</div>';
+      : `<div class="empty"><div class="eic">📡</div><p>还没有调用记录</p><p class="esub">在上方确认端点连通后，每次工具调用都会记录在这里</p></div>`;
     $("dtHealthOut").style.display = "none";
     openDlg("mDetail");
   } catch (e) { if (e.message !== "401") toast("加载详情失败：" + e.message, "err"); }
