@@ -141,10 +141,69 @@ def build_admin_router(registry: Registry, cfg: GatewayConfig) -> APIRouter:
         calls = list(reversed(svc.app.calls))[: max(1, min(limit, 200))]
         return {"service": name, "count": len(calls), "calls": calls}
 
+    @router.get(
+        "/{name}/stats",
+        dependencies=[Depends(require_admin)],
+        summary="调用统计：成功率 / p50 / p95 / 热点工具（基于内存环形缓冲最近 200 条，重启清零）",
+    )
+    async def get_service_stats(name: str) -> dict[str, Any]:
+        try:
+            svc = registry.get(name)
+        except ServiceNotFoundError as exc:
+            raise _http_error(exc) from exc
+        calls = list(svc.app.calls)
+        total = len(calls)
+        ok = sum(1 for c in calls if c.get("status") == "ok")
+        durations = sorted(
+            c["duration_ms"] for c in calls if isinstance(c.get("duration_ms"), (int, float))
+        )
+
+        def _pct(p: float) -> float | None:
+            if not durations:
+                return None
+            idx = min(len(durations) - 1, max(0, round(p / 100 * (len(durations) - 1))))
+            return durations[idx]
+
+        by_tool: dict[str, dict[str, Any]] = {}
+        for c in calls:
+            t = c.get("tool") or "?"
+            agg = by_tool.setdefault(t, {"tool": t, "calls": 0, "ok": 0, "_ms": 0.0})
+            agg["calls"] += 1
+            if c.get("status") == "ok":
+                agg["ok"] += 1
+            agg["_ms"] += c.get("duration_ms") or 0.0
+        top = sorted(by_tool.values(), key=lambda a: -a["calls"])[:6]
+        for agg in top:
+            agg["ok_rate"] = round(agg["ok"] / agg["calls"], 3) if agg["calls"] else None
+            agg["avg_ms"] = round(agg["_ms"] / agg["calls"], 1) if agg["calls"] else None
+            del agg["_ms"]
+        return {
+            "service": name,
+            "sample": {
+                "count": total,
+                "window": {"since": calls[0]["ts"], "until": calls[-1]["ts"]} if calls else None,
+                "note": "内存环形缓冲最近 200 条，重启清零",
+            },
+            "total": total,
+            "ok": ok,
+            "errors": total - ok,
+            "ok_rate": round(ok / total, 3) if total else None,
+            "duration_ms": {"p50": _pct(50), "p95": _pct(95)},
+            "top_tools": top,
+        }
+
     @router.put("/{name}", dependencies=[Depends(require_admin)], summary="更新服务（旧 MCP session 全部作废）")
     async def update_service(name: str, reg: ServiceRegistration) -> dict[str, Any]:
         try:
             svc, warnings = await registry.update(name, reg)
+        except (SpecError, RegistrationError, ServiceConflictError, ServiceNotFoundError) as exc:
+            raise _http_error(exc) from exc
+        return {**svc.summary(), "warnings": warnings}
+
+    @router.post("/{name}/refresh", dependencies=[Depends(require_admin)], summary="重拉 spec_url 并热更新（保留 api_key；仅限 spec_url 注册的服务）")
+    async def refresh_service(name: str) -> dict[str, Any]:
+        try:
+            svc, warnings = await registry.refresh(name)
         except (SpecError, RegistrationError, ServiceConflictError, ServiceNotFoundError) as exc:
             raise _http_error(exc) from exc
         return {**svc.summary(), "warnings": warnings}

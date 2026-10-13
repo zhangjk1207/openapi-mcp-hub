@@ -74,8 +74,21 @@ curl -s -X POST http://localhost:20033/services \
 | `bearer` | `token_env` | 注入 `Authorization: Bearer <env值>` |
 | `api_key` | `key_name` + `location`（header/query）+ `value_env` | 注入自定义 key 头或 query 参数 |
 | `basic` | `user_env` + `password_env` | HTTP Basic |
+| `oauth2` | `token_url` + `client_id_env` + `client_secret_env`（可选 `scope` / `scope_env`） | client_credentials：网关代取 token、缓存并提前 60s 失效；目标 API 返回 401 时强制刷新并重试一次；`token_url` 注册期过 allowlist |
 
-环境变量没配时调用返回 `-32001`，用 `GET /services/{name}/health` 的 `auth_env_ok` 一眼确认。
+oauth2 示例（企业内网 API 常见形态）：
+
+```json
+"auth": {
+  "type": "oauth2",
+  "token_url": "https://idp.internal/oauth/token",
+  "client_id_env": "MY_API_CLIENT_ID",
+  "client_secret_env": "MY_API_CLIENT_SECRET",
+  "scope": "read:pets"
+}
+```
+
+环境变量没配时调用返回 `-32001`，oauth2 的 token 请求失败同样映射为 `-32001`；用 `GET /services/{name}/health` 的 `auth_env_ok` 一眼确认。
 
 ### 3. 控制暴露面（强烈建议做）
 
@@ -155,7 +168,9 @@ curl -X POST http://localhost:20033/services -H "Authorization: Bearer $ADMIN_TO
 |---|---|
 | 服务还活着吗 | `GET /services/{name}/health` → reachable / http_status / latency_ms / **auth_env_ok** |
 | agent 调用情况 | `GET /services/{name}/calls?limit=50` → 近期 200 条：工具/状态/耗时/错误码（重启清零） |
+| 整体调用质量 | `GET /services/{name}/stats` → 成功率 / p50 / p95 / 热点工具（环形缓冲聚合，重启清零） |
 | 换 key（泄露/交接） | `POST /services/{name}/rotate-key` → 新 key 立即生效，旧 key 全部 401 |
+| 上游改了接口 | `POST /services/{name}/refresh`（仅 spec_url 注册源：重拉 spec 并热更新，api_key 不变；inline spec 用 PUT） |
 | 更新 spec/配置 | `PUT /services/{name}`（整体替换；进行中的 MCP 会话作废，客户端自动重连） |
 | 下线 | `DELETE /services/{name}`（落盘同步删除） |
 | 工具完整定义 | `GET /services/{name}/tools` |

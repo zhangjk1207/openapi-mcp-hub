@@ -393,12 +393,16 @@ table.mini td{padding:8px 12px;font-size:12.5px}
         <div class="ft">认证与暴露控制</div>
         <div class="fgrid f">
           <div><label>认证类型</label>
-            <select id="r_authtype">
+            <select id="r_authtype" onchange="authTypeChange()">
               <option value="">无认证</option><option value="bearer">Bearer</option>
               <option value="api_key">API Key</option><option value="basic">Basic</option>
+              <option value="oauth2">OAuth2（client_credentials）</option>
             </select></div>
-          <div><label>凭证环境变量名</label><input id="r_authenv" placeholder="PETSTORE_TOKEN（只填名字）">
+          <div><label id="authEnvLabel">凭证环境变量名</label><input id="r_authenv" placeholder="PETSTORE_TOKEN（只填名字）">
             <div class="fh">值配置在网关进程环境，永不落盘</div></div>
+          <div id="authOauth2A" style="display:none"><label>token_url</label><input id="r_authtokenurl" placeholder="https://idp.example/oauth/token" spellcheck="false">
+            <div class="fh">token 端点；注册期过 allowlist，token 由网关代取并缓存</div></div>
+          <div id="authOauth2B" style="display:none"><label>scope（可选）</label><input id="r_authscope" placeholder="read:pets（可留空）"></div>
           <div><label>include 路径过滤</label><input id="r_inc" placeholder="/pets*, /orders"></div>
           <div><label>exclude 路径过滤</label><input id="r_exc" placeholder="/internal/*"></div>
           <div><label>响应模板（服务级）</label><input id="r_tpl" placeholder="共 {{response.total}} 条"></div>
@@ -706,9 +710,10 @@ $("btnNew").onclick = () => {
   $("pvOut").style.display = "none";
   $("specHint").textContent = "支持 Swagger 2.0 / OpenAPI 3.0 / 3.1 · 可拖拽文件到输入框";
   specTa.style.minHeight = "";
-  ["r_name","r_title","r_base","r_specurl","r_spec","r_authenv","r_inc","r_exc","r_maxt","r_tmo","r_tpl","r_allow",
+  ["r_name","r_title","r_base","r_specurl","r_spec","r_authenv","r_authtokenurl","r_authscope","r_inc","r_exc","r_maxt","r_tmo","r_tpl","r_allow",
    "d_name","d_title","d_urlenv","d_schema","d_inc","d_exc","d_maxr","d_tmo"].forEach(i => $(i).value = "");
   $("r_authtype").value = "";
+  authTypeChange();
   openDlg("mReg"); setTimeout(() => $("r_name").focus(), 60);
 };
 $("tabRest").onclick = () => switchTab(true);
@@ -717,6 +722,21 @@ function switchTab(rest) {
   $("tabRest").classList.toggle("on", rest); $("tabDb").classList.toggle("on", !rest);
   $("paneRest").style.display = rest ? "" : "none";
   $("paneDb").style.display = rest ? "none" : "";
+}
+
+function authTypeChange() {
+  const at = $("r_authtype").value, o2 = at === "oauth2";
+  $("authOauth2A").style.display = o2 ? "" : "none";
+  $("authOauth2B").style.display = o2 ? "" : "none";
+  const presets = {
+    bearer: ["token_env", "PETSTORE_TOKEN（只填名字）"],
+    api_key: ["value_env", "PETSTORE_API_KEY（key 头名默认 X-API-Key）"],
+    basic: ["user_env, password_env", "PETSTORE_USER, PETSTORE_PASS（逗号分隔）"],
+    oauth2: ["client_id_env, client_secret_env", "OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET（逗号分隔）"],
+  };
+  const [label, ph] = presets[at] || ["凭证环境变量名", "选择认证类型后填写"];
+  $("authEnvLabel").textContent = label;
+  $("r_authenv").placeholder = ph;
 }
 
 const csv = v => v.trim() ? v.trim().split(/\s*[,，]\s*/).filter(Boolean) : [];
@@ -735,8 +755,21 @@ function collectForm() {
     const at = $("r_authtype").value, ae = $("r_authenv").value.trim();
     if (at) {
       const auth = { type: at };
-      if (at === "bearer") auth.token_env = ae || "REQUIRED_TOKEN_ENV";
-      else auth.api_key_env = ae || "REQUIRED_API_KEY_ENV";
+      if (at === "bearer") {
+        auth.token_env = ae || "REQUIRED_TOKEN_ENV";
+      } else if (at === "api_key") {
+        auth.value_env = ae || "REQUIRED_VALUE_ENV";
+      } else if (at === "basic") {
+        const [u, p] = ae.split(",").map(s => s.trim()).filter(Boolean);
+        auth.user_env = u || "REQUIRED_USER_ENV";
+        if (p) auth.password_env = p;
+      } else if (at === "oauth2") {
+        const [cid, cs] = ae.split(",").map(s => s.trim()).filter(Boolean);
+        auth.token_url = $("r_authtokenurl").value.trim() || "REQUIRED_TOKEN_URL";
+        auth.client_id_env = cid || "REQUIRED_CLIENT_ID_ENV";
+        auth.client_secret_env = cs || "REQUIRED_CLIENT_SECRET_ENV";
+        const sc = $("r_authscope").value.trim(); if (sc) auth.scope = sc;
+      }
       body.auth = auth;
     }
     const inc = csv($("r_inc").value), exc = csv($("r_exc").value);

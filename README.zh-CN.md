@@ -209,7 +209,9 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 | GET | `/services/{name}` | 详情 | 配置 + 工具清单 + 目标 API 健康探测结果 |
 | GET | `/services/{name}/health` | 健康探测 | 对目标 API 发 HEAD（405 时回退 GET），返回 reachable/状态码/延迟 ms；顺带自检凭证环境变量是否已配置（不回传值） |
 | GET | `/services/{name}/calls` | 调用日志 | 近期 200 条工具调用（内存环形缓冲，重启清零）：工具/状态/耗时/错误码 |
+| GET | `/services/{name}/stats` | 调用统计 | 环形缓冲聚合：成功率 / p50 / p95 / 热点工具（重启清零） |
 | PUT | `/services/{name}` | 更新 | 替换 spec / base_url / 过滤规则；**更新即作废该服务所有 MCP session**（客户端自动重连重新 initialize） |
+| POST | `/services/{name}/refresh` | 重拉 spec | 仅 spec_url 注册源：重新拉取 spec 并热更新，**api_key 与 created_at 保留**；上游改接口无需重发注册体 |
 | DELETE | `/services/{name}` | 下线 | 卸载路由 + 删除落盘；agent 侧表现为连接失败 |
 | POST | `/services/{name}/rotate-key` | 轮换 | 重新生成数据面 key |
 
@@ -233,7 +235,7 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 - `name`：必填，`^[a-z][a-z0-9-]{1,31}$`，**注册后不可改**（agent 配置里写死了 URL）；`title` 仅展示——内部 spec 标题多为中文，不做自动命名
 - `spec` / `spec_url`：二选一；JSON/YAML 均可，OpenAPI 3.0/3.1
 - `base_url`：目标 API 真实地址；缺省取 spec 的 `servers[0]` 并返回 warning（spec 里的 servers 经常不可信）
-- `auth`：`bearer` / `api_key`（header 或 query）/ `basic`；只存类型与**环境变量名**，调用时网关从进程环境读取
+- `auth`：`bearer` / `api_key`（header 或 query）/ `basic` / `oauth2`（client_credentials：网关代取并缓存 token、提前 60s 刷新、401 自动重试一次）；只存类型与**环境变量名**（oauth2 的 `token_url` 为注册期静态配置，同样过 allowlist），调用时网关从进程环境读取
 - `filters`：路径/标签过滤，控制暴露面
 - `max_tools`：工具数软上限，默认 100，超出拒绝注册并提示按 tag 拆分（工具过多会显著降低 LLM 选择准确率）
 - `allowed_tools`：运行时工具白名单（M3）。同一 spec 可注册多个服务、各自暴露不同子集；list/call 两层都过滤，白名单外调用返回 -32601；空 = 全部暴露

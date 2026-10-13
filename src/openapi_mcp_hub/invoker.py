@@ -9,9 +9,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -43,6 +45,10 @@ class ServiceHttpConfig:
         self.auth = auth
         self.timeout_s = timeout_s
         self._client: httpx.AsyncClient | None = None
+        # oauth2 client_credentials token 缓存（提前 60s 失效；锁住并发下的取 token 竞争）
+        self._oauth2_token: str | None = None
+        self._oauth2_expires_at: float = 0.0
+        self._oauth2_lock = asyncio.Lock()
 
     def client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -99,6 +105,15 @@ def apply_auth(
 
         cred = base64.b64encode(f"{user}:{password}".encode()).decode()
         headers["Authorization"] = f"Basic {cred}"
+    elif auth.type == "oauth2":
+        # token 获取/缓存/刷新在 Invoker._oauth2_token（异步）；此处只做环境存在性自检
+        missing = [
+            n
+            for n in (auth.client_id_env, auth.client_secret_env)
+            if not n or not os.environ.get(n)
+        ]
+        if missing:
+            return f"网关未配置凭证环境变量 {', '.join(missing)}"
     return None
 
 
@@ -140,6 +155,56 @@ def _truncate(text: str, limit: int) -> str:
 class Invoker:
     def __init__(self, http_cfg: ServiceHttpConfig):
         self.cfg = http_cfg
+
+    async def _oauth2_token(self, *, force: bool = False) -> tuple[str | None, str | None]:
+        """获取（并缓存）client_credentials token；返回 (token, 错误信息)。
+
+        - 缓存在 ServiceHttpConfig 上，进程内复用；提前 60s 失效防边界拿着将过期 token 出门；
+        - 双检锁：并发调用只触发一次 token 请求；
+        - force=True（401 重试路径）无条件刷新；
+        - token 请求走该服务同一 client（trust_env=False、不跟随重定向），
+          token_url 已在注册期过 allowlist。
+        """
+        auth = self.cfg.auth
+        assert auth is not None and auth.type == "oauth2"
+        if not force and self.cfg._oauth2_token and time.monotonic() < self.cfg._oauth2_expires_at:
+            return self.cfg._oauth2_token, None
+        async with self.cfg._oauth2_lock:
+            if not force and self.cfg._oauth2_token and time.monotonic() < self.cfg._oauth2_expires_at:
+                return self.cfg._oauth2_token, None
+            form = {
+                "grant_type": "client_credentials",
+                "client_id": os.environ.get(auth.client_id_env or ""),
+                "client_secret": os.environ.get(auth.client_secret_env or ""),
+            }
+            scope = os.environ.get(auth.scope_env) if auth.scope_env else auth.scope
+            if scope:
+                form["scope"] = scope
+            try:
+                resp = await self.cfg.client().post(
+                    auth.token_url, data=form, headers={"Accept": "application/json"}
+                )
+            except httpx.HTTPError as exc:
+                return None, f"获取 oauth2 token 失败: {exc.__class__.__name__}: {exc}"
+            if not resp.is_success:
+                excerpt = _truncate(resp.text or "", ERROR_BODY_EXCERPT_BYTES)
+                return None, (
+                    f"token 端点返回 HTTP {resp.status_code}" + (f": {excerpt}" if excerpt else "")
+                )
+            try:
+                payload = resp.json()
+            except ValueError:
+                return None, "token 端点响应不是合法 JSON"
+            token = payload.get("access_token") if isinstance(payload, dict) else None
+            if not isinstance(token, str) or not token:
+                return None, "token 端点响应缺少 access_token"
+            try:
+                ttl = int(payload.get("expires_in", 3600))
+            except (TypeError, ValueError):
+                ttl = 3600
+            self.cfg._oauth2_token = token
+            self.cfg._oauth2_expires_at = time.monotonic() + max(ttl - 60, 30)
+            return token, None
 
     async def invoke(self, tool: ToolDef, arguments: dict[str, Any] | None) -> InvokeResult:
         ep = tool.endpoint
@@ -194,28 +259,48 @@ class Invoker:
             else:
                 headers["Content-Type"] = mt
 
-        try:
-            resp = await self.cfg.client().request(
-                ep.method.upper(),
-                url,
-                headers=headers,
-                params=params or None,
-                json=body if body is not None and form_mt is None else None,
-                data=data,
-                files=files,
-            )
-        except httpx.TimeoutException:
-            return InvokeResult(
-                ok=False,
-                error=f"目标 API 超时（>{self.cfg.timeout_s}s）: {url}",
-                error_code=-32002,
-            )
-        except httpx.HTTPError as exc:
-            return InvokeResult(
-                ok=False,
-                error=f"网络错误: {exc.__class__.__name__}: {exc}",
-                error_code=-32002,
-            )
+        # oauth2：请求前确保 token（缓存命中则零网络开销）
+        oauth2 = self.cfg.auth is not None and self.cfg.auth.type == "oauth2"
+        if oauth2:
+            token, token_err = await self._oauth2_token()
+            if token_err:
+                return InvokeResult(ok=False, error=token_err, error_code=-32001)
+            headers["Authorization"] = f"Bearer {token}"
+
+        # oauth2 额外给一次 401 重试：token 在边界过期/被吊销时强制刷新后重发；
+        # 静态凭证类型重试无意义（无旋转机制），不重试
+        resp: httpx.Response | None = None
+        for attempt in range(2 if oauth2 else 1):
+            try:
+                resp = await self.cfg.client().request(
+                    ep.method.upper(),
+                    url,
+                    headers=headers,
+                    params=params or None,
+                    json=body if body is not None and form_mt is None else None,
+                    data=data,
+                    files=files,
+                )
+            except httpx.TimeoutException:
+                return InvokeResult(
+                    ok=False,
+                    error=f"目标 API 超时（>{self.cfg.timeout_s}s）: {url}",
+                    error_code=-32002,
+                )
+            except httpx.HTTPError as exc:
+                return InvokeResult(
+                    ok=False,
+                    error=f"网络错误: {exc.__class__.__name__}: {exc}",
+                    error_code=-32002,
+                )
+            if resp.status_code == 401 and oauth2 and attempt == 0:
+                token, token_err = await self._oauth2_token(force=True)
+                if token_err:
+                    return InvokeResult(ok=False, error=token_err, error_code=-32001)
+                headers["Authorization"] = f"Bearer {token}"
+                continue
+            break
+        assert resp is not None
 
         if resp.is_success:
             try:

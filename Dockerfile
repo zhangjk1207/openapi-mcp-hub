@@ -22,4 +22,8 @@ ENV OPENAPI_MCP_HUB_HOST=0.0.0.0 \
 EXPOSE 20033
 VOLUME ["/app/data"]
 
+# 健康检查：/healthz 不需要任何 token/凭证；slim 镜像无 curl，用标准库
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:20033/healthz', timeout=3)"]
+
 CMD ["python", "-m", "openapi_mcp_hub"]

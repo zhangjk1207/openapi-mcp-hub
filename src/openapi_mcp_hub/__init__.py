@@ -4,4 +4,4 @@
 MCP 端点（Streamable HTTP），运行时把工具调用代理回真实 REST API。
 """
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"

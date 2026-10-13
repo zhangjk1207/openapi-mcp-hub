@@ -122,11 +122,12 @@ Credentials are referenced **by env var name only** — nothing sensitive is per
 | **Sources** | OpenAPI 3.0/3.1, Swagger 2.0 (auto-normalized), spec URL with SSRF allowlist, JSON/YAML upload, PostgreSQL, MySQL 8+ |
 | **Transport** | Streamable HTTP + legacy SSE (`/mcp/{name}/sse`) on one port |
 | **Multi-tenant security** | Per-service `api_key` (shown once, stored hashed, rotatable), admin token for the management plane |
-| **Hot registration** | Register / update / delete without restarts; failures roll back atomically |
+| **Target API auth** | Bearer / API key / Basic / **OAuth2 client_credentials** — token fetched, cached & auto-refreshed by the gateway (one 401 retry); credentials referenced by env var name only, `token_url` allowlist-checked at registration |
+| **Hot registration** | Register / update / delete without restarts; failures roll back atomically; `spec_url` sources re-pull via `refresh` (key preserved) |
 | **Filtering** | Path include/exclude globs, tool whitelist, `max_tools` cap, response templates |
 | **Persistence** | JSON file or PostgreSQL backend, automatic one-way migration |
 | **Console** | Single-file admin UI, zero build chain, zero external assets — works in air-gapped intranets |
-| **Observability** | Health probes, in-memory ring call log (last 20/service), structured error codes (`-32000`/-`32602`/-`32002`) |
+| **Observability** | Health probes, in-memory ring call log (last 20/service), call stats (ok-rate / p50 / p95 / top tools), structured error codes (`-32000`/-`32602`/-`32002`) |
 
 ## Comparison
 
@@ -146,6 +147,7 @@ Register (with file upload / drag & drop), inspect tools & call logs, rotate key
 
 ## Roadmap
 
+- [x] v0.3.0 — OAuth2 client_credentials target auth · spec refresh endpoint · call stats · console auth fix
 - [x] M5-1 — Database → MCP (PostgreSQL + MySQL 8, six-layer read-only)
 - [ ] M5-2 — per-table tool mode, sensitive-column masking
 - [ ] M5-3 — write operations (opt-in, statement allowlist)

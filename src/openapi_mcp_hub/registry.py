@@ -133,6 +133,40 @@ class Registry:
             await self._activate(svc, old=old)
             return svc, warnings
 
+    async def refresh(self, name: str) -> tuple[RunningService, list[str]]:
+        """重拉 spec_url 并热更新：保留 api_key 与 created_at，只刷新 spec 派生的一切。
+
+        仅适用于 spec_url 注册的服务（record 留存有原 URL）；
+        spec/spec_text/db 注册源请用 PUT 重新提交。
+        """
+        async with self._lock:
+            old = self.get(name)  # 404 if missing
+            spec_url = old.record.get("spec_url")
+            if not spec_url:
+                raise RegistrationError(
+                    f"服务 {name} 不是 spec_url 注册（record 无 spec_url），请用 PUT 重新提交"
+                )
+            rec = old.record
+            reg = ServiceRegistration(
+                name=rec["name"],
+                title=rec.get("title"),
+                spec_url=spec_url,
+                base_url=rec.get("base_url"),
+                auth=AuthConfig(**rec["auth"]) if rec.get("auth") else None,
+                filters=Filters(**rec.get("filters", {})),
+                max_tools=rec.get("max_tools"),
+                timeout_s=rec.get("timeout_s", 30.0),
+                owner=rec.get("owner", ""),
+                response_template=rec.get("response_template"),
+                tool_response_templates=rec.get("tool_response_templates", {}),
+                allowed_tools=rec.get("allowed_tools") or [],
+            )
+            svc, warnings = await self._build_service(reg, key_hash=rec["api_key_hash"])
+            svc.record["created_at"] = rec.get("created_at")
+            svc.record["updated_at"] = _now()
+            await self._activate(svc, old=old)
+            return svc, warnings
+
     async def remove(self, name: str) -> None:
         async with self._lock:
             self.get(name)
@@ -304,6 +338,13 @@ class Registry:
         except TargetNotAllowed as exc:
             raise RegistrationError(str(exc)) from exc
 
+        # oauth2 token_url 由网关代发请求（与 base_url 同攻击面），注册期同样过 allowlist
+        if reg.auth is not None and reg.auth.type == "oauth2":
+            try:
+                await self.cfg.ensure_target_allowed(reg.auth.token_url)
+            except TargetNotAllowed as exc:
+                raise RegistrationError(str(exc)) from exc
+
         # 4. 接口提取 + 工具生成
         endpoints, extract_warnings = extract_endpoints(spec, reg.filters)
         warnings.extend(extract_warnings)
@@ -343,6 +384,9 @@ class Registry:
             "name": reg.name,
             "title": reg.title,
             "spec": raw_spec,  # 落盘存原文（含 Swagger 2.0 原稿），恢复时重走流水线
+            # spec_url 注册源额外留存原 URL：供 POST /services/{name}/refresh 重拉；
+            # 启动恢复仍用上面的 spec 快照（不依赖外网可达性）
+            "spec_url": reg.spec_url,
             "base_url": base_url,
             "auth": reg.auth.model_dump() if reg.auth else None,
             "filters": reg.filters.model_dump(),
@@ -501,6 +545,8 @@ class Registry:
                     db=record.get("db"),
                 )
                 svc, _ = await self._build_service(reg, key_hash=record["api_key_hash"])
+                # 恢复用 spec 快照重建，但 spec_url 元数据要回挂（供 refresh 重拉）
+                svc.record["spec_url"] = record.get("spec_url")
                 svc.record["created_at"] = record.get("created_at")
                 svc.record["updated_at"] = record.get("updated_at")
                 await self._activate(svc)

@@ -234,3 +234,125 @@ class TestErrorsAndTruncation:
         assert result.ok
         assert isinstance(result.payload, str)  # 超限被截断为文本
         assert "已截断" in result.payload
+
+
+class TestOAuth2:
+    """oauth2 client_credentials：token 代取、缓存、401 刷新重试、错误映射。"""
+
+    def _auth(self, token_url: str = "http://idp.test/token"):
+        from openapi_mcp_hub.models import AuthConfig
+
+        return AuthConfig(
+            type="oauth2",
+            token_url=token_url,
+            client_id_env="OMH_CID",
+            client_secret_env="OMH_CSEC",
+        )
+
+    @respx.mock
+    async def test_token_fetch_cached_and_injected(self, monkeypatch):
+        monkeypatch.setenv("OMH_CID", "client-id")
+        monkeypatch.setenv("OMH_CSEC", "client-secret")
+        token_route = respx.post("http://idp.test/token").mock(
+            return_value=httpx.Response(200, json={"access_token": "t1", "expires_in": 3600})
+        )
+        route = respx.get(f"{BASE}/pets/42").mock(return_value=httpx.Response(200, json={"id": 42}))
+        inv = Invoker(ServiceHttpConfig(BASE, self._auth()))
+        for _ in range(2):
+            result = await inv.invoke(_tool(), {"petId": 42})
+            assert result.ok
+        # 两次调用只取一次 token（进程内缓存）
+        assert token_route.calls.call_count == 1
+        assert route.calls.last.request.headers["Authorization"] == "Bearer t1"
+        # token 请求：client_credentials + 凭证来自环境变量
+        form = token_route.calls.last.request.content.decode()
+        assert "grant_type=client_credentials" in form
+        assert "client_id=client-id" in form
+
+    @respx.mock
+    async def test_env_missing_returns_auth_error(self, monkeypatch):
+        monkeypatch.delenv("OMH_CID", raising=False)
+        monkeypatch.delenv("OMH_CSEC", raising=False)
+        inv = Invoker(ServiceHttpConfig(BASE, self._auth()))
+        result = await inv.invoke(_tool(), {"petId": 42})
+        assert not result.ok
+        assert result.error_code == -32001
+        assert "OMH_CID" in result.error
+
+    @respx.mock
+    async def test_401_triggers_refresh_and_retry_once(self, monkeypatch):
+        monkeypatch.setenv("OMH_CID", "client-id")
+        monkeypatch.setenv("OMH_CSEC", "client-secret")
+        token_route = respx.post("http://idp.test/token").mock(
+            side_effect=[
+                httpx.Response(200, json={"access_token": "t1", "expires_in": 3600}),
+                httpx.Response(200, json={"access_token": "t2", "expires_in": 3600}),
+            ]
+        )
+        target = respx.get(f"{BASE}/pets/42").mock(
+            side_effect=[
+                httpx.Response(401, json={"detail": "token expired"}),
+                httpx.Response(200, json={"id": 42}),
+            ]
+        )
+        inv = Invoker(ServiceHttpConfig(BASE, self._auth()))
+        result = await inv.invoke(_tool(), {"petId": 42})
+        assert result.ok and result.payload == {"id": 42}
+        # token 强制刷新了一次，两次请求分别带新旧 token
+        assert token_route.calls.call_count == 2
+        auths = [c.request.headers["Authorization"] for c in target.calls]
+        assert auths == ["Bearer t1", "Bearer t2"]
+
+    @respx.mock
+    async def test_static_bearer_401_does_not_retry(self, monkeypatch):
+        monkeypatch.setenv("STATIC_TOKEN", "static-token")
+        from openapi_mcp_hub.models import AuthConfig
+
+        route = respx.get(f"{BASE}/pets/42").mock(return_value=httpx.Response(401, json={}))
+        inv = Invoker(
+            ServiceHttpConfig(BASE, AuthConfig(type="bearer", token_env="STATIC_TOKEN"))
+        )
+        result = await inv.invoke(_tool(), {"petId": 42})
+        assert not result.ok and result.status_code == 401
+        assert route.calls.call_count == 1  # 静态凭证无旋转，重试无意义
+
+    @respx.mock
+    async def test_token_endpoint_error_maps_to_auth_error(self, monkeypatch):
+        monkeypatch.setenv("OMH_CID", "client-id")
+        monkeypatch.setenv("OMH_CSEC", "client-secret")
+        respx.post("http://idp.test/token").mock(
+            return_value=httpx.Response(500, text="idp down")
+        )
+        inv = Invoker(ServiceHttpConfig(BASE, self._auth()))
+        result = await inv.invoke(_tool(), {"petId": 42})
+        assert not result.ok and result.error_code == -32001
+        assert "HTTP 500" in result.error
+
+    @respx.mock
+    async def test_scope_from_env_and_literal(self, monkeypatch):
+        monkeypatch.setenv("OMH_CID", "client-id")
+        monkeypatch.setenv("OMH_CSEC", "client-secret")
+        monkeypatch.setenv("OMH_SCOPE", "read:pets write:pets")
+        respx.get(f"{BASE}/pets/42").mock(return_value=httpx.Response(200, json={"id": 42}))
+        # scope_env 优先
+        token_route = respx.post("http://idp.test/token").mock(
+            return_value=httpx.Response(200, json={"access_token": "t1", "expires_in": 3600})
+        )
+        from openapi_mcp_hub.models import AuthConfig
+
+        inv = Invoker(ServiceHttpConfig(BASE, AuthConfig(
+            type="oauth2", token_url="http://idp.test/token",
+            client_id_env="OMH_CID", client_secret_env="OMH_CSEC",
+            scope="ignored-literal", scope_env="OMH_SCOPE",
+        )))
+        assert (await inv.invoke(_tool(), {"petId": 42})).ok
+        form = token_route.calls.last.request.content.decode()
+        assert "scope=read%3Apets+write%3Apets" in form
+        inv2 = Invoker(ServiceHttpConfig(BASE, AuthConfig(
+            type="oauth2", token_url="http://idp.test/token",
+            client_id_env="OMH_CID", client_secret_env="OMH_CSEC",
+            scope="literal-scope",
+        )))
+        assert (await inv2.invoke(_tool(), {"petId": 42})).ok
+        form2 = token_route.calls.last.request.content.decode()
+        assert "scope=literal-scope" in form2

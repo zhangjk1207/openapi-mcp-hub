@@ -3,14 +3,16 @@
 import hashlib
 import json
 
+import httpx
 import pytest
+import respx
 
 from openapi_mcp_hub.config import GatewayConfig
 from openapi_mcp_hub.errors import ServiceNotFoundError, RegistrationError, ServiceConflictError
 from openapi_mcp_hub.mcp_host import McpHost
 from openapi_mcp_hub.registry import Registry
 
-from .conftest import make_registration
+from .conftest import PETSTORE_SPEC, make_registration
 
 
 async def test_register_and_persist(gateway_cfg):
@@ -199,3 +201,63 @@ async def test_schema_defaults_filled_for_missing_args(gateway_cfg):
         )
         assert "limit=20" in str(route.calls.last.request.url)
     await reg.shutdown()
+
+
+async def test_oauth2_token_url_allowlist(tmp_path):
+    """oauth2：token_url 由网关代发请求，注册期必须过 allowlist（与 base_url 同攻击面）。"""
+    from openapi_mcp_hub.models import AuthConfig
+
+    auth = AuthConfig(
+        type="oauth2", token_url="http://idp.test/token",
+        client_id_env="CID", client_secret_env="CSEC",
+    )
+    # token_url 在 allowlist 内：注册成功（token 获取发生在调用期，注册期不触网）
+    cfg_ok = GatewayConfig(
+        admin_token="t", data_dir=tmp_path / "a",
+        host_allowlist=["target.test", "idp.test"],
+    )
+    reg = Registry(cfg_ok, McpHost())
+    svc, _, _ = await reg.register(make_registration(base_url="http://target.test", auth=auth))
+    assert svc.record["auth"]["token_url"] == "http://idp.test/token"
+    await reg.shutdown()
+
+    # token_url 不在 allowlist：注册被拒（422 语义）
+    cfg_bad = GatewayConfig(
+        admin_token="t", data_dir=tmp_path / "b",
+        host_allowlist=["target.test"],
+    )
+    reg2 = Registry(cfg_bad, McpHost())
+    with pytest.raises(RegistrationError) as ei:
+        await reg2.register(make_registration(base_url="http://target.test", auth=auth))
+    assert "idp.test" in str(ei.value)
+    await reg2.shutdown()
+
+
+async def test_oauth2_model_requires_fields():
+    from pydantic import ValidationError
+
+    from openapi_mcp_hub.models import AuthConfig
+
+    with pytest.raises(ValidationError):
+        AuthConfig(type="oauth2")  # 缺 token_url / client_id_env / client_secret_env
+    with pytest.raises(ValidationError):
+        AuthConfig(type="oauth2", token_url="ftp://x", client_id_env="A", client_secret_env="B")
+
+
+@respx.mock
+async def test_spec_url_persisted_and_restored(gateway_cfg):
+    """spec_url 注册源：URL 元数据落盘并在重启恢复后保留（供 refresh 重拉）。"""
+    spec_url = "http://spec.test/openapi.json"
+    respx.get(spec_url).mock(return_value=httpx.Response(200, json=PETSTORE_SPEC))
+    reg = Registry(gateway_cfg, McpHost())
+    await reg.register(make_registration(spec=None, spec_url=spec_url))
+    rec = json.loads((gateway_cfg.data_dir / "services" / "petstore.json").read_text(encoding="utf-8"))
+    assert rec["spec_url"] == spec_url
+    assert rec["spec"]["paths"]  # 快照也在（恢复不依赖外网）
+    await reg.shutdown()
+
+    reg2 = Registry(gateway_cfg, McpHost())
+    restored = await reg2.load_from_store()
+    assert "petstore" in restored
+    assert reg2.get("petstore").record["spec_url"] == spec_url
+    await reg2.shutdown()

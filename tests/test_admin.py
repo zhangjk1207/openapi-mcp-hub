@@ -5,6 +5,7 @@ import json
 
 import httpx
 import pytest
+import respx
 from httpx import ASGITransport
 
 from openapi_mcp_hub.main import create_app
@@ -280,3 +281,84 @@ class TestCallsLog:
         client, _ = client_and_registry
         resp = await client.get("/services/ghost/calls", headers=_auth_headers())
         assert resp.status_code == 404
+
+
+class TestRefreshStats:
+    @respx.mock
+    async def test_refresh_updates_tools_keeps_key(self, client_and_registry, gateway_cfg, petstore_spec):
+        client, reg = client_and_registry
+        spec_url = "http://spec.test/openapi.json"
+        respx.get(spec_url).mock(return_value=httpx.Response(200, json=petstore_spec))
+        resp = await client.post("/services", headers=_auth_headers(), json={
+            "name": "petstore", "title": "T", "spec_url": spec_url,
+            "base_url": "http://target.test",
+        })
+        assert resp.status_code == 201
+        old_hash = reg.get("petstore").record["api_key_hash"]
+        old_created = reg.get("petstore").record["created_at"]
+
+        # 上游 spec 收窄：只剩 /pets（get+post 两个工具；components 保留，$ref 仍可解析）
+        smaller = {
+            "openapi": petstore_spec["openapi"],
+            "paths": {"/pets": petstore_spec["paths"]["/pets"]},
+            "components": petstore_spec.get("components", {}),
+        }
+        respx.get(spec_url).mock(return_value=httpx.Response(200, json=smaller))
+        resp = await client.post("/services/petstore/refresh", headers=_auth_headers())
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tool_count"] == 2
+        svc = reg.get("petstore")
+        assert svc.record["api_key_hash"] == old_hash  # refresh 不动 key
+        assert svc.record["created_at"] == old_created
+        assert svc.record["spec_url"] == spec_url
+        # 落盘与内存一致
+        rec = json.loads((gateway_cfg.data_dir / "services" / "petstore.json").read_text(encoding="utf-8"))
+        assert rec["spec_url"] == spec_url
+
+    async def test_refresh_requires_spec_url_source(self, client_and_registry):
+        client, _ = client_and_registry
+        resp = await client.post(
+            "/services", headers=_auth_headers(), json=make_registration().model_dump()
+        )
+        assert resp.status_code == 201
+        resp = await client.post("/services/petstore/refresh", headers=_auth_headers())
+        assert resp.status_code == 422
+        assert "spec_url" in resp.json()["detail"]["message"]
+
+    async def test_stats_aggregates_calls(self, client_and_registry):
+        client, reg = client_and_registry
+        resp = await client.post(
+            "/services", headers=_auth_headers(), json=make_registration().model_dump()
+        )
+        assert resp.status_code == 201
+        calls = reg.get("petstore").app.calls
+        calls.append({"ts": "2026-10-13T10:00:00", "tool": "list_pets", "duration_ms": 100.0, "status": "ok"})
+        calls.append({"ts": "2026-10-13T10:00:01", "tool": "list_pets", "duration_ms": 300.0, "status": "ok"})
+        calls.append({"ts": "2026-10-13T10:00:02", "tool": "get_pet_by_id", "duration_ms": 1000.0,
+                      "status": "downstream", "error_code": -32000, "message": "HTTP 500"})
+        resp = await client.get("/services/petstore/stats", headers=_auth_headers())
+        assert resp.status_code == 200
+        s = resp.json()
+        assert s["total"] == 3 and s["ok"] == 2 and s["errors"] == 1
+        assert s["ok_rate"] == round(2 / 3, 3)
+        assert s["duration_ms"]["p50"] == 300.0
+        assert s["duration_ms"]["p95"] == 1000.0
+        top = {t["tool"]: t for t in s["top_tools"]}
+        assert top["list_pets"]["calls"] == 2 and top["list_pets"]["ok_rate"] == 1.0
+        assert top["get_pet_by_id"]["avg_ms"] == 1000.0
+        assert s["sample"]["window"]["since"] == "2026-10-13T10:00:00"
+
+    async def test_stats_404_and_empty(self, client_and_registry):
+        client, _ = client_and_registry
+        resp = await client.get("/services/nope/stats", headers=_auth_headers())
+        assert resp.status_code == 404
+        # 空缓冲：不崩，给出 None 分位
+        resp = await client.post(
+            "/services", headers=_auth_headers(), json=make_registration().model_dump()
+        )
+        assert resp.status_code == 201
+        resp = await client.get("/services/petstore/stats", headers=_auth_headers())
+        s = resp.json()
+        assert s["total"] == 0 and s["ok_rate"] is None
+        assert s["duration_ms"]["p50"] is None

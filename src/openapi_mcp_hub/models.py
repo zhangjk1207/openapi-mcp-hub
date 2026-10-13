@@ -20,7 +20,7 @@ SERVICE_NAME_PATTERN = r"^[a-z][a-z0-9-]{1,31}$"
 class AuthConfig(BaseModel):
     """目标 API 认证：只引用环境变量名，凭证永不落盘。"""
 
-    type: Literal["bearer", "api_key", "basic"] = "bearer"
+    type: Literal["bearer", "api_key", "basic", "oauth2"] = "bearer"
     # bearer
     token_env: str | None = None
     # api_key
@@ -30,6 +30,32 @@ class AuthConfig(BaseModel):
     # basic
     user_env: str | None = None
     password_env: str | None = None
+    # oauth2（client_credentials 模式）：token_url 为注册期静态配置，
+    # client_id/client_secret 只经环境变量引用；token 由网关代取并缓存（见 invoker）
+    token_url: str | None = None
+    client_id_env: str | None = None
+    client_secret_env: str | None = None
+    # scope：直接写字面量，或引用环境变量（scope_env 优先）；均可不填
+    scope: str | None = None
+    scope_env: str | None = None
+
+    @model_validator(mode="after")
+    def _oauth2_requires(self) -> "AuthConfig":
+        if self.type == "oauth2":
+            missing = [
+                label
+                for label, v in (
+                    ("token_url", self.token_url),
+                    ("client_id_env", self.client_id_env),
+                    ("client_secret_env", self.client_secret_env),
+                )
+                if not v
+            ]
+            if missing:
+                raise ValueError(f"oauth2 认证缺少必填字段: {', '.join(missing)}")
+            if not str(self.token_url).startswith(("http://", "https://")):
+                raise ValueError("token_url 必须以 http(s):// 开头")
+        return self
 
 
 class Filters(BaseModel):
