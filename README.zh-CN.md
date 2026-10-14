@@ -25,6 +25,8 @@
 
 因此本项目的形态是**网关（Gateway）**：常驻一个服务进程，注册多少份 spec，就动态挂载多少个 MCP 端点，全部收敛在同一个端口下。
 
+2026 年公开的 MCP 生态安全报告反复指向同样的痛点：**只有约 8.5% 的 MCP server 使用 OAuth**，tool poisoning / rug pull（上游悄悄改工具描述）往往要等 agent 行为异常才被发现。因此本网关把**数据面认证**与**工具变更可见性**当作一等公民功能（见 5.1 与第 7 节），而非企业版附加项。
+
 ## 2. 架构
 
 ```
@@ -366,6 +368,8 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 
 > 对照结论：路径参数转义（`quote(safe="")` 比 Unla `PathEscape` 更严）、cookie 参数、重定向 SSRF、解压、错误模型、注册期模板校验均已领先或持平；OTel/Prometheus、DB 版本管理、多租户、forward headers、per-tool 代理为刻意不采纳项。
 
+> 生态位（v0.4.0 起）：Kong AI Gateway 提供 MCP 治理但其 RBAC/OIDC 需要付费企业版，Zuplo 为 SaaS 托管；本网关的定位是**免费、自托管、单进程、air-gapped 可用，且 MCP 数据面 OAuth 2.1 resource server 与工具漂移可见性开箱即用**。
+
 - **数据面 JWT 认证（v0.4.0）**：外部 IdP 模式（JWKS 验签 + iss/aud 校验 + 算法白名单 + RFC 9728 发现）与内置签发模式（HS256 短期 token、aud 绑定服务、密钥仅环境变量）；`X-Api-Key` 与 `Bearer` 双模式按服务独立选择。
 - **工具漂移可见性（v0.4.0，防 tool poisoning）**：每次 `PUT /services/{name}` 与 `POST /services/{name}/refresh` 返回 `tool_changes`（新增/下线/描述变化/入参变化四类 diff）；描述变化时附加「请人工复核」告警——描述即 LLM 的行为指令面，静默变更（rug pull）是 MCP 生态 2026 年公开报告的高频攻击面。
 
@@ -417,8 +421,11 @@ openapi-mcp-hub/
 | **M1** ✅ | 网关骨架：FastAPI + Registry（落盘/恢复）+ Loader/Extractor/Generator + 管理面 CRUD + `/mcp/{name}` 挂载 + 双层鉴权 | 已交付：注册 petstore spec 后，MCP 客户端能列出并调用工具（e2e + 冒烟全链路通过） |
 | **M2** ✅ | 调用链加固：响应模板、SSRF 加固（DNS 核验/重定向逐跳/mapped IPv6）、结构化错误模型、Swagger 2.0 + OpenAPI 3.1、br/zstd 解压 | 已交付：121 项测试全通过（借鉴 Unla 设计，见第 7 节） |
 | **M3** ✅ | 可观测与 DX：调用日志（GET /services/{name}/calls）、预览端点（POST /services/preview + sample_response 模板渲染）、运行时工具白名单 allowed_tools、表单/multipart 提交、schema default 填充、模板 `\|\|` 默认值 | 已交付：138 项测试全通过；对照 Unla 逐项审查后仅吸收上述 6 项，其余（多租户/Redis/OTel/Prometheus/版本管理）明确不做 |
-| **M4** 🚧 | SSE 兼容端点（`/mcp/{name}/sse` + `/message`）、健康探测（GET /services/{name}/health）、Docker 部署（Dockerfile + compose） | 已交付前 3 项：双 transport 与 streamable 共享回调与鉴权、HEAD/GET 探测 + 凭证 env 自检、镜像构建与容器全链路验证；剩导出独立 server、HA |
+| **M4** ✅ | SSE 兼容端点（`/mcp/{name}/sse` + `/message`）、健康探测（GET /services/{name}/health）、Docker 部署（Dockerfile + compose） | 已交付：双 transport 与 streamable 共享回调与鉴权、HEAD/GET 探测 + 凭证 env 自检、镜像构建与容器全链路验证；剩导出独立 server、HA |
+| **M5-1** ✅ | 数据库 → MCP：PostgreSQL / MySQL 8 注册源，六层强制只读 | 已交付：内省生成查询/描述/schema 工具，只读在六层强制（见第 2.5 节）；M5-2 per_table 与 M5-3 写模式经评审暂不做 |
+| **v0.3.0** ✅ | OAuth2 `client_credentials` 目标认证（token 代取/缓存/提前 60s 刷新/401 单次重试）· `POST /services/{name}/refresh` 热更新 · `GET /services/{name}/stats` 调用统计 · 控制台 auth 表单修复 | 已交付：测试 163 项全通过 |
+| **v0.4.0** ✅ | **JWT 数据面认证（MCP OAuth 2.1 resource server：外部 IdP JWKS 验签 + RFC 9728 发现 / 内置短期签发）** · tool poisoning 漂移 diff（PUT/refresh 返回 `tool_changes` 四类工具集变更 + 描述变化人工复核告警） | 已交付：测试 177 项全通过 |
 
 ## 11. 贡献与联系
 
-- 分支策略：`master` 为主干，功能开发用 `feat/*`，合并前过单测；
+- 分支策略：`main` 为主干，功能开发用 `feat/*`，合并前过单测；
