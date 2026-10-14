@@ -255,6 +255,32 @@ claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
 
 ---
 
+### 数据面认证切换（authn，v0.4.0）
+
+默认每服务一把 `X-Api-Key`（注册时返回一次、落盘存哈希、可 `rotate-key` 轮换）。
+要换 JWT（MCP OAuth 2.1 resource server）：
+
+```jsonc
+// 内置签发（网关自己发短期 token，适合不想引入 IdP 的内网）
+{ "name": "crm", "spec_url": "…", "base_url": "…", "authn": { "mode": "jwt" } }
+// 外部 IdP（企业 Keycloak/Auth0 签发，网关只验签——推荐）
+{ "name": "crm", "spec_url": "…", "base_url": "…",
+  "authn": { "mode": "jwt", "jwks_url": "https://idp/.well-known/jwks.json",
+             "issuer": "https://idp", "audience": "mcp://crm" } }
+```
+
+内置模式三步：
+
+```bash
+export OPENAPI_MCP_HUB_JWT_SECRET="$(openssl rand -hex 32)"   # 网关环境变量，永不落盘
+curl -X POST $GW/services/crm/token -H "Authorization: Bearer $ADMIN" -d '{"ttl_s":3600}'
+# 拿到 token 后，agent 侧请求头：Authorization: Bearer <token>
+```
+
+外部模式无需签发端点——agent（如 Claude Code）会按 RFC 9728 元数据
+（`/.well-known/oauth-protected-resource/mcp/{name}`）自动发现你的 IdP 走完整 OAuth 2.1 流程。
+`jwt` 模式下 `X-Api-Key` 通道关闭；401 带 `WWW-Authenticate` 指针。
+
 ## 附：完整注册字段参考
 
 | 字段 | 必填 | 说明 |
@@ -264,6 +290,7 @@ claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
 | `base_url` | 建议 | 目标 API 地址；缺省取 spec servers[0] |
 | `title` | | 展示名 |
 | `auth` | | 见第一节 2 |
+| `authn` | | **数据面**认证：缺省=静态 `X-Api-Key`；`{"mode":"jwt"}`=内置签发；`{"mode":"jwt","jwks_url":…,"issuer":…}`=外部 IdP（见上文「数据面认证切换」） |
 | `filters` | | `include` / `exclude` 路径通配、`exclude_tags` |
 | `max_tools` | | 默认 100，超出拒绝注册 |
 | `allowed_tools` | | 运行时白名单，空=全部 |

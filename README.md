@@ -30,6 +30,8 @@ No wrapper code. No per-spec deployment. No port sprawl. Register as many servic
 
 **openapi-mcp-hub is a gateway**: one resident process, one port, path-level multi-tenancy (`/mcp/{service}`). Registration takes effect immediately — no restarts.
 
+Public 2026 MCP ecosystem reports keep finding the same pain: only ~8.5% of MCP servers use OAuth, and tool-poisoning / rug-pull changes go unnoticed until an agent misbehaves. That is why this gateway treats **data-plane auth and tool-change visibility as first-class features**, not enterprise add-ons.
+
 ```text
              ┌──────────── admin plane (admin token) ─────────────┐
              │  POST /services            register (REST or DB)   │
@@ -122,6 +124,8 @@ Credentials are referenced **by env var name only** — nothing sensitive is per
 | **Sources** | OpenAPI 3.0/3.1, Swagger 2.0 (auto-normalized), spec URL with SSRF allowlist, JSON/YAML upload, PostgreSQL, MySQL 8+ |
 | **Transport** | Streamable HTTP + legacy SSE (`/mcp/{name}/sse`) on one port |
 | **Multi-tenant security** | Per-service `api_key` (shown once, stored hashed, rotatable), admin token for the management plane |
+| **MCP data-plane auth** | Static key **or JWT as an OAuth 2.1 resource server**: external IdP (RS256/ES256 + JWKS + issuer/audience checks, RFC 9728 discovery, `WWW-Authenticate` on 401) or built-in issuance (HS256, short-TTL, `aud` bound to the service) |
+| **Tool-poisoning visibility** | Every update/`refresh` returns a tool-set diff (`added` / `removed` / `description_changed` / `input_schema_changed`) plus a human-review warning when descriptions change — descriptions are the LLM's instruction surface |
 | **Target API auth** | Bearer / API key / Basic / **OAuth2 client_credentials** — token fetched, cached & auto-refreshed by the gateway (one 401 retry); credentials referenced by env var name only, `token_url` allowlist-checked at registration |
 | **Hot registration** | Register / update / delete without restarts; failures roll back atomically; `spec_url` sources re-pull via `refresh` (key preserved) |
 | **Filtering** | Path include/exclude globs, tool whitelist, `max_tools` cap, response templates |
@@ -137,7 +141,33 @@ Credentials are referenced **by env var name only** — nothing sensitive is per
 | Ports | **1** | N | 1 (heavyweight) |
 | Database → MCP | **Built-in, read-only enforced** | Separate project | Rarely |
 | Air-gapped console | **Yes, single HTML file** | — | Usually needs internet |
+| MCP data-plane auth (OAuth 2.1 resource server) | **Built-in, free** | — | Kong AI Gateway: RBAC/OIDC requires the paid Enterprise tier; Zuplo: SaaS |
+| Tool-poisoning visibility | **Tool-set diff + review warning on every update/refresh** | — | Rarely |
 | Runtime deps | FastAPI + mcp SDK (~10 packages) | varies | Full gateway stack |
+
+## Security posture
+
+Everything below ships in the free, self-hosted, single-binary build:
+
+| Layer | Mechanism |
+|---|---|
+| Management plane | `OPENAPI_MCP_HUB_ADMIN_TOKEN` (env only); all admin routes require it |
+| Data plane (static mode) | Per-service `X-Api-Key`, shown once, stored as SHA-256 hash, rotatable via `rotate-key` |
+| Data plane (JWT mode) | `Authorization: Bearer` — **external IdP**: RS256/ES256 via JWKS (cached 300s, kid rotation aware), `iss`/`aud` enforced, algorithms whitelisted (no alg-confusion); **built-in**: HS256 with `OPENAPI_MCP_HUB_JWT_SECRET` (env only, never persisted), TTL ≤ 24h, `aud` bound to the service name. RFC 9728 metadata at `/.well-known/oauth-protected-resource/mcp/{name}` so spec-native clients (e.g. Claude Code) can discover your IdP |
+| SSRF | Three layers: registration-time host allowlist, per-hop re-check on redirects, response timeouts |
+| Secrets at rest | Target-API credentials referenced by env var *names* only — nothing sensitive is persisted |
+| Database tools | Six-layer read-only (see above) |
+| Tool poisoning | `tool_changes` diff + human-review warning whenever tool descriptions change on update/refresh |
+
+JWT mode in three commands (built-in issuance):
+
+```bash
+export OPENAPI_MCP_HUB_JWT_SECRET="$(openssl rand -hex 32)"
+# register with authn={"mode":"jwt"} (see USAGE.md for external-IdP mode)
+curl -X POST $GW/services -H "Authorization: Bearer $ADMIN" -d '{"name":"crm","spec_url":"...","base_url":"...","authn":{"mode":"jwt"}}'
+curl -X POST $GW/services/crm/token -H "Authorization: Bearer $ADMIN" -d '{"ttl_s":3600}'
+# → use the returned token as: Authorization: Bearer <token>
+```
 
 ## Console screenshots
 
@@ -147,6 +177,7 @@ Register (with file upload / drag & drop), inspect tools & call logs, rotate key
 
 ## Roadmap
 
+- [x] v0.4.0 — **JWT data-plane auth (OAuth 2.1 resource server, RFC 9728)** · tool-poisoning drift diff on update/refresh
 - [x] v0.3.0 — OAuth2 client_credentials target auth · spec refresh endpoint · call stats · console auth fix
 - [x] M5-1 — Database → MCP (PostgreSQL + MySQL 8, six-layer read-only)
 - [ ] M5-2 — per-table tool mode, sensitive-column masking

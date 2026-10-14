@@ -32,6 +32,21 @@ logger = logging.getLogger(__name__)
 _KEY_PREFIX = "psk-"
 
 
+def _tool_changes(
+    old_tools: list[ToolDef], new_tools: list[ToolDef]
+) -> dict[str, list[str]]:
+    """工具集 diff：新增/下线/描述变化/入参变化（tool poisoning 防护的观测面）。"""
+    old = {t.name: t for t in old_tools}
+    new = {t.name: t for t in new_tools}
+    common = sorted(set(old) & set(new))
+    return {
+        "added": sorted(set(new) - set(old)),
+        "removed": sorted(set(old) - set(new)),
+        "description_changed": [n for n in common if old[n].description != new[n].description],
+        "input_schema_changed": [n for n in common if old[n].input_schema != new[n].input_schema],
+    }
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -49,6 +64,8 @@ class RunningService:
     app: McpServiceApp
     invoker: Invoker | None = None          # REST 源
     db_executor: DbExecutor | None = None  # DB 源（M5）
+    # 更新/refresh 时的工具变更摘要（tool poisoning 防护：描述是 LLM 的行为指令面）
+    changes: dict[str, list[str]] | None = None
 
     def summary(self) -> dict[str, Any]:
         db_cfg = self.record.get("db")
@@ -128,6 +145,12 @@ class Registry:
             svc, warnings = await self._build_service(
                 reg, key_hash=old.record["api_key_hash"]
             )
+            svc.changes = _tool_changes(old.tools, svc.tools)
+            if svc.changes.get("description_changed"):
+                warnings.append(
+                    f"工具描述发生变化: {svc.changes['description_changed']}"
+                    "（上游 spec 变更请人工复核——描述即 LLM 的行为指令面，防 tool poisoning）"
+                )
             svc.record["created_at"] = old.record.get("created_at")
             svc.record["updated_at"] = _now()
             await self._activate(svc, old=old)
@@ -160,8 +183,15 @@ class Registry:
                 response_template=rec.get("response_template"),
                 tool_response_templates=rec.get("tool_response_templates", {}),
                 allowed_tools=rec.get("allowed_tools") or [],
+                authn=rec.get("authn"),
             )
             svc, warnings = await self._build_service(reg, key_hash=rec["api_key_hash"])
+            svc.changes = _tool_changes(old.tools, svc.tools)
+            if svc.changes.get("description_changed"):
+                warnings.append(
+                    f"工具描述发生变化: {svc.changes['description_changed']}"
+                    "（上游 spec 变更请人工复核——描述即 LLM 的行为指令面，防 tool poisoning）"
+                )
             svc.record["created_at"] = rec.get("created_at")
             svc.record["updated_at"] = _now()
             await self._activate(svc, old=old)
@@ -396,6 +426,7 @@ class Registry:
             "response_template": reg.response_template,
             "tool_response_templates": reg.tool_response_templates,
             "allowed_tools": reg.allowed_tools,
+            "authn": reg.authn.model_dump() if reg.authn else None,
             "api_key_hash": key_hash,
             "created_at": None,
             "updated_at": None,
@@ -480,6 +511,7 @@ class Registry:
             "db": db.model_dump(),
             "owner": reg.owner,
             "allowed_tools": reg.allowed_tools,
+            "authn": reg.authn.model_dump() if reg.authn else None,
             "api_key_hash": key_hash,
             "created_at": None,
             "updated_at": None,
@@ -499,7 +531,9 @@ class Registry:
         错误信息会提示重试 PUT。
         """
         name = svc.record["name"]
-        await self.host.install(name, svc.app, svc.record["api_key_hash"])
+        await self.host.install(
+            name, svc.app, svc.record["api_key_hash"], authn=svc.record.get("authn")
+        )
         self._services[name] = svc
         try:
             await self._store.save(svc.record)
@@ -542,6 +576,7 @@ class Registry:
                     response_template=record.get("response_template"),
                     tool_response_templates=record.get("tool_response_templates", {}),
                     allowed_tools=record.get("allowed_tools") or [],
+                    authn=record.get("authn"),
                     db=record.get("db"),
                 )
                 svc, _ = await self._build_service(reg, key_hash=record["api_key_hash"])

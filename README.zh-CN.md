@@ -241,6 +241,19 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 - `allowed_tools`：运行时工具白名单（M3）。同一 spec 可注册多个服务、各自暴露不同子集；list/call 两层都过滤，白名单外调用返回 -32601；空 = 全部暴露
 - `response_template` / `tool_response_templates`：响应模板（见第 7 节）
 
+### 5.1 数据面认证（v0.4.0：MCP OAuth 2.1 resource server）
+
+注册时 `authn` 字段控制数据面（agent → `/mcp/{name}`）认证方式：
+
+| 模式 | 配置 | 行为 |
+|---|---|---|
+| `static`（默认） | `authn` 缺省 | 既有 `X-Api-Key`（返回一次、落盘哈希、可轮换） |
+| `jwt`（内置签发） | `{"mode":"jwt"}` | 网关用 `OPENAPI_MCP_HUB_JWT_SECRET`（HS256，仅存在于进程环境）签发短期 token：`POST /services/{name}/token`（`ttl_s`≤24h，aud 绑定服务名，到期自动失效） |
+| `jwt`（外部 IdP） | `{"mode":"jwt","jwks_url":"…","issuer":"…","audience":"…"}` | 网关只做 resource server：JWKS 验签（RS256/ES256 白名单，防算法混淆）、iss/aud 强校验；`/.well-known/oauth-protected-resource/mcp/{name}` 提供 RFC 9728 发现，Claude Code 等 spec 原生客户端可走完整 OAuth 2.1 流程对接企业 Keycloak/Auth0 |
+
+`jwt` 模式下 `X-Api-Key` 通道关闭；401 响应带 `WWW-Authenticate` 头指向资源元数据。
+密钥/私钥永不落盘：外部模式只存 JWKS URL（公钥可拉取），内置模式密钥只在环境变量。
+
 ## 6. 接口 → 工具映射规则
 
 | OpenAPI 元素 | MCP Tool 字段 | 规则 |
@@ -352,6 +365,9 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 - **调用日志**：`GET /services/{name}/calls?limit=50`，内存环形缓冲 200 条（工具/状态/耗时 ms/错误码/消息摘要，重启清零），不落盘不含响应原文。
 
 > 对照结论：路径参数转义（`quote(safe="")` 比 Unla `PathEscape` 更严）、cookie 参数、重定向 SSRF、解压、错误模型、注册期模板校验均已领先或持平；OTel/Prometheus、DB 版本管理、多租户、forward headers、per-tool 代理为刻意不采纳项。
+
+- **数据面 JWT 认证（v0.4.0）**：外部 IdP 模式（JWKS 验签 + iss/aud 校验 + 算法白名单 + RFC 9728 发现）与内置签发模式（HS256 短期 token、aud 绑定服务、密钥仅环境变量）；`X-Api-Key` 与 `Bearer` 双模式按服务独立选择。
+- **工具漂移可见性（v0.4.0，防 tool poisoning）**：每次 `PUT /services/{name}` 与 `POST /services/{name}/refresh` 返回 `tool_changes`（新增/下线/描述变化/入参变化四类 diff）；描述变化时附加「请人工复核」告警——描述即 LLM 的行为指令面，静默变更（rug pull）是 MCP 生态 2026 年公开报告的高频攻击面。
 
 ## 8. 项目结构（规划）
 

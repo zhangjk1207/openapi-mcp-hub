@@ -10,12 +10,13 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .admin import build_admin_router
 from .config import GatewayConfig
+from .errors import ServiceNotFoundError
 from .mcp_host import McpHost
 from .registry import Registry
 from .store import FileStore, PgStore, Store
@@ -63,6 +64,29 @@ def create_app(cfg: GatewayConfig | None = None) -> FastAPI:
     @app.get("/healthz", summary="健康检查")
     async def healthz() -> dict:
         return {"status": "ok"}
+
+    # RFC 9728 受保护资源元数据（MCP OAuth 2.1 客户端发现授权服务器的入口）。
+    # ⚠ 必须注册在静态 mount("/") 之前（详见下方注释）；仅 jwt 外部 IdP 模式的服务
+    # 存在此元数据——内置签发模式没有授权服务器可发现，token 由管理面签发。
+    @app.get(
+        "/.well-known/oauth-protected-resource/mcp/{name}",
+        summary="RFC 9728 受保护资源元数据（jwt 外部 IdP 模式服务）",
+    )
+    async def protected_resource_metadata(name: str, request: Request) -> dict:
+        try:
+            svc = registry.get(name)
+        except ServiceNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        authn = svc.record.get("authn") or {}
+        if authn.get("mode") != "jwt" or not authn.get("issuer"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"服务 {name} 未启用 jwt 外部 IdP 模式（无授权服务器可发现）",
+            )
+        return {
+            "resource": f"{str(request.base_url).rstrip('/')}/mcp/{name}",
+            "authorization_servers": [authn["issuer"]],
+        }
 
     # 轻量控制台（单文件静态页，零构建链）
     # ⚠ 必须是 create_app 最后一个挂载：静态 mount 在 "/" 会按注册顺序兜底一切

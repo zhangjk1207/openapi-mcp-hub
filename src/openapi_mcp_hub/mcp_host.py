@@ -37,7 +37,8 @@ from mcp.types import (
 from . import __version__
 from .invoker import Invoker
 from .db import DbExecutor
-from .models import ToolDef
+from .jwt_auth import JwtAuthnError, verify_token, www_authenticate_header
+from .models import DataPlaneAuthn, ToolDef
 from .templates import render_response
 
 logger = logging.getLogger(__name__)
@@ -329,19 +330,34 @@ class McpServiceApp:
 
 
 class McpHost:
-    """ASGI 分发器：/mcp 前缀下按服务名路由到对应 McpServiceApp。"""
+    """ASGI 分发器：/mcp 前缀下按服务名路由到对应 McpServiceApp。
+
+    数据面认证双模式（MCP OAuth 2.1 resource server 角色）：
+    - static（默认）：X-Api-Key 与落盘哈希比对；
+    - jwt：Authorization: Bearer，内部/外部 IdP 两态（见 jwt_auth 模块）。
+    """
 
     def __init__(self) -> None:
         self._apps: dict[str, McpServiceApp] = {}
         self._key_hashes: dict[str, str] = {}
+        self._authn: dict[str, DataPlaneAuthn | None] = {}
 
     # ------------------------------------------------------------ 服务管理
 
-    async def install(self, name: str, app: McpServiceApp, api_key_hash: str) -> McpServiceApp | None:
+    async def install(
+        self,
+        name: str,
+        app: McpServiceApp,
+        api_key_hash: str,
+        *,
+        authn: dict[str, Any] | None = None,
+    ) -> McpServiceApp | None:
         """挂载（同名覆盖：先挂新实例并就绪，再停旧实例）；返回被替换的旧实例。"""
         old = self._apps.get(name)
         self._apps[name] = app
         self._key_hashes[name] = api_key_hash
+        # authn 传 dict（落盘形态）就地转模型；非法配置在这里显式失败
+        self._authn[name] = DataPlaneAuthn(**authn) if authn else None
         await app.start()
         if old is not None:
             await old.stop()
@@ -350,6 +366,7 @@ class McpHost:
     async def uninstall(self, name: str) -> None:
         app = self._apps.pop(name, None)
         self._key_hashes.pop(name, None)
+        self._authn.pop(name, None)
         if app is not None:
             await app.stop()
 
@@ -389,6 +406,42 @@ class McpHost:
             await _send_json(send, 404, {"detail": f"未注册的服务: {name}"})
             return
 
+        authn = self._authn.get(name)
+        if authn is not None and authn.mode == "jwt":
+            # jwt 模式：Bearer token（RFC 6750）；X-Api-Key 在此模式下关闭
+            provided = _header(scope, "authorization")
+            if not provided or not provided.lower().startswith("bearer "):
+                await _send_json(
+                    send,
+                    401,
+                    {"detail": f"缺少 Authorization: Bearer token（服务 {name} 为 jwt 认证）"},
+                    extra_headers=[
+                        (b"www-authenticate", www_authenticate_header(name).encode())
+                    ],
+                )
+                return
+            token = provided[7:].strip()
+            try:
+                # 外部模式 JWKS 拉取走线程池（PyJWKClient 是同步 urllib），不阻塞事件循环
+                await asyncio.to_thread(
+                    verify_token, token, service_name=name, authn=authn
+                )
+            except JwtAuthnError as exc:
+                await _send_json(
+                    send,
+                    401,
+                    {"detail": f"token 无效: {exc}"},
+                    extra_headers=[
+                        (
+                            b"www-authenticate",
+                            www_authenticate_header(name).encode(),
+                        )
+                    ],
+                )
+                return
+            await app.handle(scope, receive, send)
+            return
+
         key_hash = self._key_hashes.get(name, "")
         provided = _header(scope, "x-api-key")
         if not provided:
@@ -412,16 +465,15 @@ def _header(scope: dict, lower_name: str) -> str | None:
     return None
 
 
-async def _send_json(send, status: int, payload: dict) -> None:
+async def _send_json(
+    send, status: int, payload: dict, *, extra_headers: list[tuple[bytes, bytes]] | None = None
+) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode()
-    await send(
-        {
-            "type": "http.response.start",
-            "status": status,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode()),
-            ],
-        }
-    )
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode()),
+    ]
+    if extra_headers:
+        headers.extend(extra_headers)
+    await send({"type": "http.response.start", "status": status, "headers": headers})
     await send({"type": "http.response.body", "body": body})

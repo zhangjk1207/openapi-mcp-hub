@@ -65,6 +65,36 @@ class Filters(BaseModel):
     include_deprecated: bool = False
 
 
+class DataPlaneAuthn(BaseModel):
+    """数据面（agent → /mcp/{name}）认证方式。
+
+    - static（默认）：既有 X-Api-Key（注册时返回一次，落盘存哈希）；
+    - jwt：Bearer token（MCP OAuth 2.1 resource server 角色）——
+      配 jwks_url + issuer 则验外部 IdP 签发的 token（企业推荐）；
+      不配则用网关内置签发（HS256，密钥在 OPENAPI_MCP_HUB_JWT_SECRET，
+      管理面 POST /services/{name}/token 签发短期 token）。
+    jwt 模式下 X-Api-Key 认证关闭。
+    """
+
+    mode: Literal["static", "jwt"] = "static"
+    # 外部 IdP 模式（resource server：只验签，不做授权流）
+    jwks_url: str | None = None
+    issuer: str | None = None
+    # 预期 audience；缺省不校验 aud（内置模式恒校验 aud=服务名）
+    audience: str | None = None
+    algorithms: list[str] = Field(default_factory=lambda: ["RS256", "ES256"])
+
+    @model_validator(mode="after")
+    def _jwt_fields(self) -> "DataPlaneAuthn":
+        if self.mode == "jwt":
+            # 外部模式：jwks 与 issuer 成对出现；内置模式：两者都不配
+            if (self.jwks_url is None) != (self.issuer is None):
+                raise ValueError("jwt 外部 IdP 模式需同时配置 jwks_url 与 issuer（内置签发模式则都不配）")
+            if self.jwks_url and not str(self.jwks_url).startswith(("http://", "https://")):
+                raise ValueError("jwks_url 必须以 http(s):// 开头")
+        return self
+
+
 class ServiceRegistration(BaseModel):
     """POST/PUT /services 请求体。"""
 
@@ -76,6 +106,8 @@ class ServiceRegistration(BaseModel):
     spec_url: str | None = None
     base_url: str | None = None
     auth: AuthConfig | None = None
+    # 数据面认证（默认 static X-Api-Key；可切 jwt——见 DataPlaneAuthn）
+    authn: DataPlaneAuthn | None = None
     filters: Filters = Field(default_factory=Filters)
     max_tools: int | None = Field(default=None, ge=1)
     timeout_s: float = Field(default=30.0, gt=0, le=300)

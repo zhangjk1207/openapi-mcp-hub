@@ -62,6 +62,21 @@ def build_admin_router(registry: Registry, cfg: GatewayConfig) -> APIRouter:
             raise _http_error(exc) from exc
         name = reg.name
         mcp_url = _mcp_url(request, name)
+        if reg.authn is not None and reg.authn.mode == "jwt":
+            # jwt 模式：静态 key 已关闭，不返回会误导使用方的 key
+            return {
+                "name": name,
+                "title": svc.record.get("title"),
+                "mcp_url": mcp_url,
+                "authn": "jwt",
+                "token_hint": (
+                    "外部 IdP 模式：向 IdP 申请 audience 含本服务 URL 的 token；"
+                    "内置模式：POST /services/{name}/token 签发"
+                ),
+                "tool_count": len(svc.tools),
+                "tools": [t.name for t in svc.tools],
+                "warnings": warnings,
+            }
         return {
             "name": name,
             "title": svc.record.get("title"),
@@ -198,7 +213,7 @@ def build_admin_router(registry: Registry, cfg: GatewayConfig) -> APIRouter:
             svc, warnings = await registry.update(name, reg)
         except (SpecError, RegistrationError, ServiceConflictError, ServiceNotFoundError) as exc:
             raise _http_error(exc) from exc
-        return {**svc.summary(), "warnings": warnings}
+        return {**svc.summary(), "warnings": warnings, "tool_changes": svc.changes}
 
     @router.post("/{name}/refresh", dependencies=[Depends(require_admin)], summary="重拉 spec_url 并热更新（保留 api_key；仅限 spec_url 注册的服务）")
     async def refresh_service(name: str) -> dict[str, Any]:
@@ -206,7 +221,7 @@ def build_admin_router(registry: Registry, cfg: GatewayConfig) -> APIRouter:
             svc, warnings = await registry.refresh(name)
         except (SpecError, RegistrationError, ServiceConflictError, ServiceNotFoundError) as exc:
             raise _http_error(exc) from exc
-        return {**svc.summary(), "warnings": warnings}
+        return {**svc.summary(), "warnings": warnings, "tool_changes": svc.changes}
 
     @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)], summary="下线服务")
     async def delete_service(name: str) -> None:
@@ -215,12 +230,44 @@ def build_admin_router(registry: Registry, cfg: GatewayConfig) -> APIRouter:
         except ServiceNotFoundError as exc:
             raise _http_error(exc) from exc
 
-    @router.post("/{name}/rotate-key", dependencies=[Depends(require_admin)], summary="轮换数据面 key")
+    @router.post("/{name}/rotate-key", dependencies=[Depends(require_admin)], summary="轮换数据面 key（static 模式）")
     async def rotate_key(name: str) -> dict[str, str]:
         try:
             api_key = await registry.rotate_key(name)
         except ServiceNotFoundError as exc:
             raise _http_error(exc) from exc
         return {"name": name, "api_key": api_key}
+
+    @router.post(
+        "/{name}/token",
+        dependencies=[Depends(require_admin)],
+        summary="签发短期数据面 token（仅内置 jwt 模式：authn.mode=jwt 且未配 jwks_url）",
+    )
+    async def issue_token(name: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        from .jwt_auth import DEFAULT_TTL_S, issue_builtin_token
+
+        try:
+            svc = registry.get(name)
+        except ServiceNotFoundError as exc:
+            raise _http_error(exc) from exc
+        authn = svc.record.get("authn") or {}
+        if authn.get("mode") != "jwt" or authn.get("jwks_url"):
+            raise HTTPException(
+                status_code=422,
+                detail="仅内置 jwt 模式（authn.mode=jwt 且未配 jwks_url）支持网关签发；"
+                "外部 IdP 模式请向你的 IdP 申请 token；static 模式请用 api_key",
+            )
+        ttl_s = int((payload or {}).get("ttl_s") or DEFAULT_TTL_S)
+        try:
+            token, ttl = issue_builtin_token(name, ttl_s=ttl_s)
+        except RegistrationError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {
+            "name": name,
+            "token": token,  # 短期有效；到期重新签发，不落盘不回收
+            "token_type": "Bearer",
+            "expires_in": ttl,
+            "usage": f"请求头 Authorization: Bearer {token[:12]}…（完整值见 token 字段）",
+        }
 
     return router
