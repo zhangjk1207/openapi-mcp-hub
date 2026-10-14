@@ -1,31 +1,28 @@
 # openapi-mcp-hub
 
-**OpenAPI → MCP 网关**：起一个服务（如 `localhost:20033`），向它 POST 一份 `openapi.json`，立刻得到一个可直接接入 agent 的 MCP 端点 —— `http://localhost:20033/mcp/{service-name}`。
+OpenAPI → MCP 网关。起一个服务（比如 `localhost:20033`），POST 一份 `openapi.json` 过去，马上得到一个 MCP 端点：`http://localhost:20033/mcp/{service-name}`，agent 可以直接用。
 
-**也可以直接注册一个 PostgreSQL 库**（无需写接口）：内省库表 → 只读查询工具，同一网关同一套 key/观测。
+没有 REST API、只有数据库的，可以直接注册一个 PostgreSQL 库：网关内省库表，生成只读查询工具，管理和 REST 服务同一套。
 
-单端口、路径级多租户、注册即热生效；不为每份 spec 单独部署进程、单独占端口。
+一个端口，路径级多租户，注册即生效。不用为每份 spec 部署一个进程、占一个端口。
 
-浏览器打开网关根路径即是**内置控制台**（单文件静态页，零构建链零外部依赖）：表单注册
-（含预检）、服务列表/详情、健康探测、调用日志、key 轮换——内网环境开箱即用。
+网关根路径带一个控制台，单文件静态页，没有构建链和外部资源。能表单注册（带预检）、看服务列表和详情、健康探测、调用日志、轮换 key。内网环境直接用。
 
-> ✅ 当前状态（v0.2.0）：**M4 + 持久化 + DB→MCP（M5-1）已交付** —— SSE 兼容端点、健康探测、Docker 化、PostgreSQL 双后端持久化（自动迁移）、数据库只读三件套工具（PostgreSQL + MySQL 8）；164 项测试全过。English docs: [README.md](README.md)
->
-> 📖 **怎么用看 [USAGE.md](USAGE.md)**：注册方接入指南（REST + 数据库）+ agent 使用方接入指南 + 报错速查表。
+> 当前版本 v0.4.0，177 项测试通过。怎么用看 [USAGE.md](USAGE.md)，英文文档 [README.md](README.md)。
 
 ![demo](docs/demo.gif)
 
 ---
 
-## 1. 背景与目标
+## 1. 为什么要做这个
 
-- **OpenAPI（Swagger）** 是 REST 接口描述的事实标准，内部大量服务都有现成的 `openapi.json`；
-- **MCP（Model Context Protocol）** 已成为 agent 接入工具的主流协议，Claude Code 等客户端原生支持 Streamable HTTP 传输；
-- 手工为每个接口包装 MCP tool 重复且难维护；而"每份 spec 部署一个 MCP 服务"会造成端口泛滥、运维成本线性增长。
+- OpenAPI 是 REST 接口描述的事实标准，内部大部分服务都有现成的 `openapi.json`；
+- MCP 已经是 agent 接工具的主流协议，Claude Code 这类客户端原生支持 Streamable HTTP；
+- 手工给每个接口包一层 MCP tool，重复而且难维护；反过来，每份 spec 部署一个 MCP 服务，端口和运维成本都会随服务数线性涨。
 
-因此本项目的形态是**网关（Gateway）**：常驻一个服务进程，注册多少份 spec，就动态挂载多少个 MCP 端点，全部收敛在同一个端口下。
+所以做成网关：一个常驻进程，注册多少份 spec 就动态挂多少个 MCP 端点，都在同一个端口下。
 
-2026 年公开的 MCP 生态安全报告反复指向同样的痛点：**只有约 8.5% 的 MCP server 使用 OAuth**，tool poisoning / rug pull（上游悄悄改工具描述）往往要等 agent 行为异常才被发现。因此本网关把**数据面认证**与**工具变更可见性**当作一等公民功能（见 5.1 与第 7 节），而非企业版附加项。
+另外两件事值得提前说。2026 年几份公开的 MCP 生态安全报告说的都是同一件事：大约只有 8.5% 的 MCP server 在用 OAuth；上游悄悄改工具描述（tool poisoning / rug pull）这种事，一般要等 agent 行为异常才被发现。这两件事这个网关都直接处理了——数据面认证见 5.1，工具变更可见性见第 7 节。
 
 ## 2. 架构
 
@@ -50,17 +47,17 @@
                         各目标 REST API
 ```
 
-- **管理面** `/services/*`：面向注册方（人或 CI），负责服务生命周期；
-- **数据面** `/mcp/{name}`：面向 agent 客户端，MCP Streamable HTTP 端点，Claude Code 直接填 URL 即可接入；
-- **SSE 兼容** `/mcp/{name}/sse`（GET）+ `/mcp/{name}/message?session_id=...`（POST）：老客户端兼容通道，与 streamable 共享同一套工具回调与鉴权，双通道可同时使用；
-- 两个命名空间物理隔离，服务名不可能与管理路由冲突（对比 `/{name}/mcp` 方案：注册一个叫 `add` 的服务就会撞路由）。
+- 管理面 `/services/*`，面向注册方（人或 CI），管服务生命周期；
+- 数据面 `/mcp/{name}`，面向 agent，Streamable HTTP 端点，Claude Code 填 URL 就能接；
+- SSE 兼容通道 `/mcp/{name}/sse`（GET）+ `/mcp/{name}/message?session_id=...`（POST），给老客户端，与 streamable 共享同一套工具回调与鉴权，两个通道可以同时用；
+- 两个命名空间物理隔离，服务名不可能和管理路由撞上（对比 `/{name}/mcp` 方案：注册一个叫 `add` 的服务就撞了）。
 
-## 3. 三十秒上手（规划中的完整流程）
+## 3. 三十秒上手
 
 ```bash
 # ① 启动网关（一次）
 export OPENAPI_MCP_HUB_ADMIN_TOKEN=<管理token>
-python -m openapi_mcp_hub          # 监听 0.0.0.0:20033（OPENAPI_MCP_HUB_HOST/PORT 可改；容器化见 M3）
+python -m openapi_mcp_hub          # 监听 0.0.0.0:20033（OPENAPI_MCP_HUB_HOST/PORT 可改）
 
 # ② 注册一个服务：spec + 真实地址 + 凭证引用（注意：光有 openapi.json 不够）
 curl -X POST http://localhost:20033/services \
@@ -68,7 +65,7 @@ curl -X POST http://localhost:20033/services \
   -H "Content-Type: application/json" \
   -d @examples/register-petstore.json
 
-# ③ 响应直接给出接入命令（注册即热生效，无需重启）
+# ③ 响应直接给出接入命令（注册即生效，不用重启）
 # {
 #   "name": "petstore",
 #   "mcp_url": "http://localhost:20033/mcp/petstore",
@@ -82,25 +79,25 @@ claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
   --header "X-Api-Key: psk-xxxx"
 ```
 
-之后 agent 中的 LLM 调用工具 → 网关把参数还原成真实 HTTP 请求转发到目标 API → 结构化结果返回给 LLM。
+之后 LLM 调工具，网关把参数还原成真实 HTTP 请求发给目标 API，结果再结构化地回去。
 
-**本地开发与测试**：
+本地开发与测试：
 
 ```bash
-pip install -e ".[dev]"     # 或在共享 venv 中安装 pytest/pytest-asyncio/respx
-python -m pytest tests/      # 78 个用例：单测 + respx mock + e2e（真实 uvicorn 双服务 + MCP 客户端）
+pip install -e ".[dev]"     # pytest/pytest-asyncio/respx 等一起装上
+python -m pytest tests/      # 177 个用例：单测 + respx mock + e2e（真实 uvicorn 双服务 + MCP 客户端）
 ```
 
-适配说明：基于 mcp SDK **2.x**（2.3+）——lowlevel `Server` 构造器注入 `on_list_tools`/`on_call_tool` 回调、types 为 snake_case、入参校验由网关用 jsonschema 按 inputSchema 自行执行（2.x 不再内置校验）。运行环境使用项目独立 venv（`python -m venv .venv && .venv/bin/pip install -e ".[dev]"`），不影响机器上其他项目的共享环境。
+适配说明：基于 mcp SDK 2.x（2.3+）。lowlevel `Server` 构造器注入 `on_list_tools`/`on_call_tool` 回调，types 是 snake_case，入参校验 SDK 2.x 不再内置，网关用 jsonschema 按 inputSchema 自己做。运行环境建议项目独立 venv（`python -m venv .venv && .venv/bin/pip install -e ".[dev]"`），不碰机器上的共享环境。
 
-### 60 秒体验（Docker 一键编排）
+### 60 秒体验（Docker）
 
 ```bash
 git clone https://github.com/zhangjk1207/openapi-mcp-hub && cd openapi-mcp-hub
 docker compose up -d       # 网关 + PostgreSQL + 演示 API，自动注册 petstore 演示服务
 ```
 
-打开 **http://localhost:20033**，输入演示管理 token：`demo-admin-token` —— 控制台里已有一个可直接使用的 `petstore` 服务。立刻体验 agent 可调用的端点：
+打开 http://localhost:20033，演示管理 token：`demo-admin-token`。里面已经有一个能直接用的 `petstore` 服务：
 
 ```bash
 curl -X POST http://localhost:20033/mcp/petstore \
@@ -116,12 +113,12 @@ claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
   --header "X-Api-Key: psk-demo-petstore-key"
 ```
 
-> 演示模式（compose 里的 `OPENAPI_MCP_HUB_DEMO=1`）使用固定公开的演示 key，只为零摩擦上手。正式使用前请关闭演示模式并修改 `OPENAPI_MCP_HUB_ADMIN_TOKEN`——真实注册永远返回一次性随机 key。
+演示模式（compose 里的 `OPENAPI_MCP_HUB_DEMO=1`）用固定公开的演示 key，只是为了省事。正式使用前关掉演示模式、改掉 `OPENAPI_MCP_HUB_ADMIN_TOKEN`——真实注册返回的永远是一次性随机 key。
 
-### 部署（常驻，无 Docker）
+### 常驻部署（无 Docker）
 
 ```bash
-# ① 启动网关（0.0.0.0:20033；首次自动生成并保存管理 token 到 deploy/admin_token）
+# ① 启动网关（0.0.0.0:20033；首次自动生成管理 token 存到 deploy/admin_token）
 nohup deploy/run.sh >/dev/null 2>&1 &
 
 # ② （可选）启动演示目标 API（127.0.0.1:20034，带 Bearer 认证的 petstore mock）
@@ -141,40 +138,37 @@ curl -s -X POST http://127.0.0.1:20033/services \
 默认文件后端（`data/services/*.json` 原子写，重启自动恢复）。切 PostgreSQL：
 
 ```bash
-cp deploy/pg.env.example deploy/pg.env   # 填入 DSN（密码特殊字符需 URL 转义）
+cp deploy/pg.env.example deploy/pg.env   # 填 DSN（密码特殊字符要 URL 转义）
 DEMO_PETSTORE_TOKEN=xxx nohup deploy/run.sh ...   # 重启即生效
 ```
 
-- 表结构：`services(name PK, title, base_url, api_key_hash, owner, created_at, updated_at, record JSONB)`，record 与文件模式同构；
-- **首次切换自动迁移**：pg 表为空且 data/services 有记录 → 导入（原文件保留，去掉 pg.env 重启即回滚到文件模式；
-  注意迁移是单向的：pg 期间新注册的服务不回写文件，回滚会回到迁移时点）；
-- pg 不可达时网关启动失败退出（fail fast，由 supervisor/容器重启重试）；
-- 集成测试：`OMH_PG_TEST_DSN=... pytest tests/test_store_pg.py`（未配置自动跳过）。
+- 表结构：`services(name PK, title, base_url, api_key_hash, owner, created_at, updated_at, record JSONB)`，record 和文件模式同构；
+- 首次切换自动迁移：pg 表为空且 data/services 有记录就导入，原文件保留。注意迁移是单向的：pg 期间新注册的服务不回写文件，去掉 pg.env 重启会回到迁移时点；
+- pg 连不上时网关启动直接失败退出（fail fast，交给 supervisor/容器重启重试）；
+- 集成测试：`OMH_PG_TEST_DSN=... pytest tests/test_store_pg.py`，没配置就自动跳过。
 
-### 数据库 → MCP（M5-1）：不用写接口，直接查库
+### 数据库 → MCP：不用写接口，直接查库
 
-没有 REST API 的数据，直接把库注册进来（**PostgreSQL / MySQL 8+ 只读**，方言由 DSN 前缀自动推断）——`db` 与 `spec` 二选一：
+没有 REST API 的数据，直接把库注册进来（PostgreSQL / MySQL 8+，只读，方言由 DSN 前缀推断）。`db` 和 `spec` 二选一：
 
 ```bash
-# ① DSN 含密码只经环境变量引用（永不落盘；与目标 API 凭证同原则）
+# ① DSN 含密码只经环境变量引用（永不落盘，和目标 API 凭证同一原则）
 export WORKFLOW_DB_URL='postgresql://ro_user:***@db.internal.example:5432/workflow'   # MySQL：mysql://user:***@host:3306/db
 
-# ② 注册：内省库表 → 生成三件套工具（工具数恒定，表多不爆炸）
+# ② 注册：内省库表 → 生成三件套工具（工具数固定，表多也不会爆）
 curl -X POST http://localhost:20033/services -H "Authorization: Bearer $ADMIN_TOKEN" -d '{
   "name": "workflow-db",
   "db": {"url_env": "WORKFLOW_DB_URL", "schema": "public",
          "exclude_tables": ["*_audit"], "max_rows": 200}
 }'
-# → 工具：list_tables / describe_table / query（schema 摘要已写进 query 描述，LLM 可盲写 SQL）
+# → 工具：list_tables / describe_table / query（schema 摘要写进 query 描述，LLM 可以直接盲写 SQL）
 ```
 
-安全六层（详见 docs/PLAN-DB-MCP.md）：DSN 环境变量引用、只读三重强制（READ ONLY 事务 +
-语句白名单 + 建议只读账号）、语句超时（pg：statement_timeout / mysql：max_execution_time）/
-行数上限（外层 LIMIT 包裹）、独立连接池、表过滤、SQL 摘要进调用日志。写操作一律拦截（-32602）。
+只读是六层强制的（详见 docs/PLAN-DB-MCP.md）：DSN 环境变量引用、只读三重强制（READ ONLY 事务 + 语句白名单 + 建议只读账号）、语句超时（pg 用 statement_timeout，mysql 用 max_execution_time）、行数上限（外层 LIMIT 包裹）、独立连接池、表过滤，外加 SQL 摘要进调用日志。写操作一律拦截（-32602）。
 
-与 REST 服务同窗管理：同一个 `/mcp/{name}`、同一套 key/鉴权/持久化/健康探测/观测。
+和 REST 服务同窗管理：同一个 `/mcp/{name}`，同一套 key、鉴权、持久化、健康探测、观测。
 
-### Docker 部署（M4）
+### Docker 部署
 
 ```bash
 # 构建（内网环境用 host 网络直连清华 pypi 镜像）
@@ -190,34 +184,35 @@ docker run -d --network host \
 OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 ```
 
-镜像验证过的能力：容器内注册/数据卷重启恢复、health 凭证自检（缺 env 时 `auth_env_ok:false`）、streamable 与 SSE 双通道全链路。
+镜像里验证过的：容器内注册、数据卷重启恢复、health 凭证自检（缺 env 时 `auth_env_ok:false`）、streamable 与 SSE 双通道全链路。
 
-## 4. 关键决策记录（已定）
+## 4. 关键决策（已定）
 
-| 决策点 | 结论 | 说明 |
+| 决策点 | 结论 | 理由 |
 |---|---|---|
-| 管理面鉴权 | 静态 admin token | `OPENAPI_MCP_HUB_ADMIN_TOKEN` 环境变量注入，内网场景够用 |
-| 目标 API 凭证 | 网关代持 | 注册时只引用**环境变量名**（如 `GRANDE_TOKEN`），凭证永不落盘 |
-| 数据面鉴权 | 每服务独立 key | 注册时生成、仅返回一次、落盘存哈希、支持轮换；请求头 `X-Api-Key` |
-| 首批客户端 | Claude Code | 原生支持 Streamable HTTP；Cursor / Cline / LangGraph 同样可用；Claude Desktop 需 mcp-remote 桥（M4 提供模板） |
+| 管理面鉴权 | 静态 admin token | `OPENAPI_MCP_HUB_ADMIN_TOKEN` 环境变量注入，内网够用 |
+| 目标 API 凭证 | 网关代持 | 注册时只引用环境变量名（如 `GRANDE_TOKEN`），凭证永不落盘 |
+| 数据面鉴权 | 每服务独立 key（默认）或 JWT | key：注册时生成、只返回一次、落盘哈希、可轮换，请求头 `X-Api-Key`；JWT 见 5.1 |
+| 首批客户端 | Claude Code | 原生支持 Streamable HTTP；Cursor / Cline / LangGraph 也能用；Claude Desktop 要走 mcp-remote 桥 |
 
 ## 5. 管理面 API
 
 | 方法 | 路径 | 作用 | 说明 |
 |---|---|---|---|
-| POST | `/services` | 注册 | 解析 → 生成工具 → 挂载 → 落盘，秒级同步返回；同名返回 409，覆盖必须显式 PUT |
-| GET | `/services` | 列表 | 含健康状态、工具数、owner、更新时间 |
-| POST | `/services/preview` | 预览 | 完整走流水线但不落盘、不生成端点/key；可选 `sample_response` 直接渲染模板效果（对应 Unla template-tester） |
+| POST | `/services` | 注册 | 解析 → 生成工具 → 挂载 → 落盘，同步返回；同名返回 409，覆盖必须显式 PUT |
+| GET | `/services` | 列表 | 健康状态、工具数、owner、更新时间 |
+| POST | `/services/preview` | 预览 | 完整走流水线但不落盘、不生成端点和 key；可选 `sample_response` 直接渲染模板效果 |
 | GET | `/services/{name}` | 详情 | 配置 + 工具清单 + 目标 API 健康探测结果 |
-| GET | `/services/{name}/health` | 健康探测 | 对目标 API 发 HEAD（405 时回退 GET），返回 reachable/状态码/延迟 ms；顺带自检凭证环境变量是否已配置（不回传值） |
-| GET | `/services/{name}/calls` | 调用日志 | 近期 200 条工具调用（内存环形缓冲，重启清零）：工具/状态/耗时/错误码 |
-| GET | `/services/{name}/stats` | 调用统计 | 环形缓冲聚合：成功率 / p50 / p95 / 热点工具（重启清零） |
-| PUT | `/services/{name}` | 更新 | 替换 spec / base_url / 过滤规则；**更新即作废该服务所有 MCP session**（客户端自动重连重新 initialize） |
-| POST | `/services/{name}/refresh` | 重拉 spec | 仅 spec_url 注册源：重新拉取 spec 并热更新，**api_key 与 created_at 保留**；上游改接口无需重发注册体 |
-| DELETE | `/services/{name}` | 下线 | 卸载路由 + 删除落盘；agent 侧表现为连接失败 |
-| POST | `/services/{name}/rotate-key` | 轮换 | 重新生成数据面 key |
+| GET | `/services/{name}/health` | 健康探测 | 对目标 API 发 HEAD（405 时回退 GET），返回 reachable/状态码/延迟 ms；顺带自检凭证环境变量配没配（不回传值） |
+| GET | `/services/{name}/calls` | 调用日志 | 近 200 条工具调用（内存环形缓冲，重启清零）：工具/状态/耗时/错误码 |
+| GET | `/services/{name}/stats` | 调用统计 | 环形缓冲聚合：成功率 / p50 / p95 / 热点工具 |
+| PUT | `/services/{name}` | 更新 | 替换 spec / base_url / 过滤规则；更新即作废该服务所有 MCP session（客户端会自动重连重新 initialize） |
+| POST | `/services/{name}/refresh` | 重拉 spec | 仅 spec_url 注册源：重新拉 spec 热更新，api_key 与 created_at 保留，上游改接口不用重发注册体 |
+| POST | `/services/{name}/token` | 签发短期 token | 仅内置 jwt 模式（见 5.1），TTL 60s–24h |
+| DELETE | `/services/{name}` | 下线 | 卸载路由 + 删落盘；agent 侧表现为连接失败 |
+| POST | `/services/{name}/rotate-key` | 轮换 | 重新生成数据面 key（static 模式） |
 
-**注册请求体**：
+注册请求体：
 
 ```json
 {
@@ -234,40 +229,40 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 
 字段说明：
 
-- `name`：必填，`^[a-z][a-z0-9-]{1,31}$`，**注册后不可改**（agent 配置里写死了 URL）；`title` 仅展示——内部 spec 标题多为中文，不做自动命名
-- `spec` / `spec_url`：二选一；JSON/YAML 均可，OpenAPI 3.0/3.1
-- `base_url`：目标 API 真实地址；缺省取 spec 的 `servers[0]` 并返回 warning（spec 里的 servers 经常不可信）
-- `auth`：`bearer` / `api_key`（header 或 query）/ `basic` / `oauth2`（client_credentials：网关代取并缓存 token、提前 60s 刷新、401 自动重试一次）；只存类型与**环境变量名**（oauth2 的 `token_url` 为注册期静态配置，同样过 allowlist），调用时网关从进程环境读取
-- `filters`：路径/标签过滤，控制暴露面
-- `max_tools`：工具数软上限，默认 100，超出拒绝注册并提示按 tag 拆分（工具过多会显著降低 LLM 选择准确率）
-- `allowed_tools`：运行时工具白名单（M3）。同一 spec 可注册多个服务、各自暴露不同子集；list/call 两层都过滤，白名单外调用返回 -32601；空 = 全部暴露
-- `response_template` / `tool_response_templates`：响应模板（见第 7 节）
+- `name`：必填，`^[a-z][a-z0-9-]{1,31}$`，注册后不可改（agent 配置里写死了 URL）；`title` 只做展示，内部 spec 标题多为中文，不做自动命名；
+- `spec` / `spec_url`：二选一；JSON/YAML 都行，OpenAPI 3.0/3.1；
+- `base_url`：目标 API 真实地址；缺省取 spec 的 `servers[0]` 并给 warning（spec 里的 servers 经常不可信）；
+- `auth`：`bearer` / `api_key`（header 或 query）/ `basic` / `oauth2`（client_credentials：网关代取并缓存 token、提前 60s 刷新、401 自动重试一次）；只存类型与环境变量名（oauth2 的 `token_url` 是注册期静态配置，同样过 allowlist），调用时网关从进程环境读；
+- `authn`：数据面认证，见 5.1；
+- `filters`：路径/标签过滤，控制暴露面；
+- `max_tools`：工具数上限，默认 100，超出拒绝注册并提示按 tag 拆分（工具太多会明显降低 LLM 选对的概率）；
+- `allowed_tools`：运行时工具白名单。同一 spec 可以注册多个服务、各暴露不同子集；list 和 call 两层都过滤，白名单外调用返回 -32601；空 = 全部暴露；
+- `response_template` / `tool_response_templates`：响应模板，见第 7 节。
 
-### 5.1 数据面认证（v0.4.0：MCP OAuth 2.1 resource server）
+### 5.1 数据面认证（v0.4.0）：X-Api-Key 或 JWT
 
-注册时 `authn` 字段控制数据面（agent → `/mcp/{name}`）认证方式：
+注册时 `authn` 字段控制数据面（agent → `/mcp/{name}`）怎么认证：
 
 | 模式 | 配置 | 行为 |
 |---|---|---|
-| `static`（默认） | `authn` 缺省 | 既有 `X-Api-Key`（返回一次、落盘哈希、可轮换） |
-| `jwt`（内置签发） | `{"mode":"jwt"}` | 网关用 `OPENAPI_MCP_HUB_JWT_SECRET`（HS256，仅存在于进程环境）签发短期 token：`POST /services/{name}/token`（`ttl_s`≤24h，aud 绑定服务名，到期自动失效） |
-| `jwt`（外部 IdP） | `{"mode":"jwt","jwks_url":"…","issuer":"…","audience":"…"}` | 网关只做 resource server：JWKS 验签（RS256/ES256 白名单，防算法混淆）、iss/aud 强校验；`/.well-known/oauth-protected-resource/mcp/{name}` 提供 RFC 9728 发现，Claude Code 等 spec 原生客户端可走完整 OAuth 2.1 流程对接企业 Keycloak/Auth0 |
+| static（默认） | `authn` 缺省 | `X-Api-Key`：注册返回一次、落盘哈希、可轮换 |
+| jwt，内置签发 | `{"mode":"jwt"}` | 网关用 `OPENAPI_MCP_HUB_JWT_SECRET`（HS256，密钥只在进程环境）签发短期 token：`POST /services/{name}/token`，`ttl_s` 上限 24h，aud 绑定服务名，到期自动失效 |
+| jwt，外部 IdP | `{"mode":"jwt","jwks_url":"…","issuer":"…","audience":"…"}` | 网关只做 resource server：JWKS 验签（算法白名单 RS256/ES256）、iss/aud 校验；`/.well-known/oauth-protected-resource/mcp/{name}` 提供 RFC 9728 发现，Claude Code 这类按 spec 走的客户端可以对接着企业 Keycloak/Auth0 走完整 OAuth 2.1 流程 |
 
-`jwt` 模式下 `X-Api-Key` 通道关闭；401 响应带 `WWW-Authenticate` 头指向资源元数据。
-密钥/私钥永不落盘：外部模式只存 JWKS URL（公钥可拉取），内置模式密钥只在环境变量。
+jwt 模式下该服务的 `X-Api-Key` 通道关闭；401 响应带 `WWW-Authenticate` 头，指向资源元数据。密钥和私钥不落盘：外部模式只存 JWKS URL（拉的是公钥），内置模式密钥只在环境变量里。
 
 ## 6. 接口 → 工具映射规则
 
 | OpenAPI 元素 | MCP Tool 字段 | 规则 |
 |---|---|---|
-| `operationId` | `name` | 清洗为 `字母/数字/_/-`、≤64；缺失时由 `method + path` 生成（`/pets/{id}` → `get_pets_id`）；冲突加序号 |
-| `summary` + `description` | `description` | 拼接并附 method/path，让 LLM 准确理解用途 |
+| `operationId` | `name` | 清洗为字母/数字/`_`/`-`、≤64；缺失时由 `method + path` 生成（`/pets/{id}` → `get_pets_id`）；冲突加序号 |
+| `summary` + `description` | `description` | 拼接并附 method/path，让 LLM 知道这个工具是干嘛的 |
 | `parameters`（path/query/header） | `inputSchema` 顶层属性 | 类型、required、enum、format 一一保留；path 参数强制必填 |
-| `requestBody.schema` | `inputSchema.body` | 整体作为 `body` 对象，避免与参数名冲突 |
+| `requestBody.schema` | `inputSchema.body` | 整体作为 `body` 对象，避免和参数名冲突 |
 | `responses` | 结果约定 | 2xx JSON 原样返回（超限截断）；非 2xx 以 MCP `isError` 返回状态码 + 响应体摘要（默认 4KB） |
 | `securitySchemes` | 认证识别 | 实际凭证来自注册配置，不从 spec 取 |
 
-示例——spec 片段：
+spec 片段：
 
 ```json
 "/pets/{petId}": {
@@ -295,31 +290,36 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 }
 ```
 
-## 7. 稳定性与安全清单
+## 7. 稳定性与安全
 
-**热更新语义**：新增服务 = 挂新路由，立即生效；更新服务 = 旧 session 全部作废（404，客户端自动重连），新 session 看到新工具集。不追求无缝热替换。
+热更新：新增服务挂新路由，立即生效。更新服务会把该服务的旧 session 全部作废（404，客户端会自动重连），新 session 拿到新工具集。不做无缝热替换。
 
-**隔离性**：
-- per-service 独立 httpx client（独立超时/连接池）+ 熔断，一个慢上游拖不垮全局；
-- per-service 并发限流，保护目标 API；
-- 大 spec 解析丢线程池，不阻塞事件循环。
+隔离：
 
-**安全**：
-- 管理面 `Authorization: Bearer <admin-token>`；数据面 `X-Api-Key: <per-service-key>`；
-- 目标主机 allowlist（`OPENAPI_MCP_HUB_HOST_ALLOWLIST`），防 SSRF（M2 加固）：
-  - IP 字面量与网段比对，`::ffff:10.0.0.1` 等 IPv4-mapped IPv6 先规范化再比对（防绕过/防误杀）；
-  - 未列名域名在注册时做 **DNS 解析核验**：所有解析 IP 必须命中网段条目（防 DNS rebinding）；
-  - spec_url 拉取不自动跟随重定向：逐跳跟随且每跳重新过 allowlist；invoker 显式 `follow_redirects=False`；
+- 每个服务独立 httpx client（独立超时/连接池）+ 熔断，一个慢上游拖不垮全局；
+- 每服务并发限流，保护目标 API；
+- 大 spec 的解析丢线程池，不阻塞事件循环。
+
+安全：
+
+- 管理面 `Authorization: Bearer <admin-token>`；数据面 `X-Api-Key` 或 JWT（5.1）；
+- 目标主机 allowlist（`OPENAPI_MCP_HUB_HOST_ALLOWLIST`），防 SSRF：
+  - IP 字面量与网段比对，`::ffff:10.0.0.1` 这类 IPv4-mapped IPv6 先规范化再比（防绕过也防误杀）；
+  - 没列名的域名在注册时做 DNS 解析核验：所有解析 IP 必须命中网段条目（防 DNS rebinding）；
+  - spec_url 拉取不自动跟重定向：逐跳跟随、每跳重新过 allowlist；invoker 显式 `follow_redirects=False`；
   - 名字条目（精确/子域名）视为显式信任，不做解析；
 - 凭证只引用环境变量名，不落盘、不进日志；
-- spec 入参限制：体积上限、`$ref` 嵌套深度上限（防解析炸弹）；
-- 信任边界认知：**tool description 会进入 LLM 上下文**，注册权限即影响所有接入 agent 的行为，admin token 是唯一闸门。
+- spec 入参有限制：体积上限、`$ref` 嵌套深度上限（防解析炸弹）；
+- 数据面 JWT（v0.4.0）：外部 IdP 模式（JWKS 验签、iss/aud 校验、算法白名单、RFC 9728 发现）与内置签发模式（HS256 短期 token、aud 绑定服务、密钥只在环境变量）。key 和 token 按服务独立选。
+- 工具变更可见性（v0.4.0，防 tool poisoning）：每次 `PUT /services/{name}` 与 `POST /services/{name}/refresh` 返回 `tool_changes`——新增、下线、描述变化、入参变化四类 diff；描述变了会附带人工复核提示。理由很直接：描述就是 LLM 看到的指令，上游静默改描述（rug pull）是 2026 年公开报告里 MCP 生态的高频攻击面。
 
-**持久化**：注册数据原子写盘（tmp + rename），网关重启后自动全量恢复，agent 侧 URL 永不变。
+有一个边界要认清：tool description 会进入 LLM 的上下文。谁能注册服务，谁就能影响所有接入的 agent——所以 admin token 是唯一的闸门。
 
-### 响应模板（M2）
+持久化：注册数据原子写盘（tmp + rename），网关重启自动全量恢复，agent 侧 URL 永不变。
 
-默认工具输出是目标 API 的原始 JSON passthrough。注册时可配置模板把响应裁剪成 LLM 友好文本（省 token、可隐藏敏感字段）：
+### 响应模板
+
+默认工具输出是目标 API 的原始 JSON。注册时可配模板，把响应裁成 LLM 好读的文本（省 token，也能藏敏感字段）：
 
 ```json
 {
@@ -333,12 +333,12 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 
 - `response_template`：服务级默认，对所有工具生效；
 - `tool_response_templates`：工具级覆盖，优先于服务级；
-- 语法：`{{response}}` 整体输出（紧凑 JSON）；`{{response.a.b.0.c}}` 点路径 safeGet 取值（缺字段/越界渲染为空串，绝不报错）；`{{status}}`/`{{tool}}`/`{{ok}}`；
-- 注册时校验语法（非法拒收 422），渲染异常自动回退 passthrough，绝不影响调用结果；
+- 语法：`{{response}}` 整体输出（紧凑 JSON）；`{{response.a.b.0.c}}` 点路径 safeGet 取值（缺字段/越界渲染成空串，不报错）；`{{status}}`/`{{tool}}`/`{{ok}}`；
+- 注册时校验语法（非法拒收 422）；渲染出异常自动回退 passthrough，不影响调用结果。
 
-### 错误模型（M2）
+### 错误模型
 
-工具调用失败时返回 `isError=true` + 结构化 JSON 载荷（对齐 JSON-RPC 错误对象）：
+工具调用失败返回 `isError=true` + 结构化 JSON 载荷（对齐 JSON-RPC 错误对象）：
 
 ```json
 {"error": {"code": -32000, "message": "目标 API 返回 HTTP 404: ...", "data": {"http_status": 404, "tool": "get_pet_by_id", "service": "petstore"}}}
@@ -346,63 +346,68 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 
 | code | 含义 |
 |---|---|
-| -32601 | 未知工具（服务可能刚更新，请重新拉取工具列表） |
-| -32602 | 入参未过 inputSchema 校验 / 缺少路径参数 |
+| -32601 | 未知工具（服务可能刚更新，重新拉一下工具列表） |
+| -32602 | 入参没过 inputSchema 校验 / 缺路径参数 |
 | -32603 | 网关内部错误 |
-| -32000 | 目标 API 返回非 2xx（`data.http_status` 为原始状态码） |
-| -32001 | 目标 API 凭证缺失（环境变量未配置） |
+| -32000 | 目标 API 返回非 2xx（`data.http_status` 是原始状态码） |
+| -32001 | 目标 API 凭证缺失（环境变量没配） |
 | -32002 | 网络错误 / 超时 |
 
-### 多版本 spec 支持（M2）
+### 多版本 spec
 
-- **Swagger 2.0**：自动归一化为 OpenAPI 3.0 结构后走同一流水线（`host/basePath/schemes → servers`、`definitions → components.schemas` + `$ref` 前缀重写、`in: body` → requestBody、**formData 字段合并为 JSON body 属性**（warning 提示）、内联 `type` 包装为 schema、path 参数强制 required）；
-- **OpenAPI 3.1**：支持，布尔 schema 归一化为空 schema，`type` 数组透传（外部 `$ref` 暂不支持，warning 提示）；
-- 落盘始终保存**原始 spec**（含 Swagger 2.0 原稿），恢复时重走归一化流水线。
+- Swagger 2.0：自动归一化成 OpenAPI 3.0 再走流水线（`host/basePath/schemes → servers`、`definitions → components.schemas` + `$ref` 前缀重写、`in: body` → requestBody、formData 字段合并为 JSON body 属性并给 warning、内联 `type` 包装成 schema、path 参数强制 required）；
+- OpenAPI 3.1：支持，布尔 schema 归一化为空 schema，`type` 数组透传（外部 `$ref` 暂不支持，给 warning）；
+- 落盘始终存原始 spec（含 Swagger 2.0 原稿），恢复时重走归一化。
 
-### 调用链细节（M3，对照 Unla 吸收）
+### 调用链细节
 
-- **表单/multipart 提交**：requestBody 为 `multipart/form-data` 或 `application/x-www-form-urlencoded` 时，字段同样提为工具参数，invoker 按表单方式提交；字段值传 `{filename, content, encoding: "base64"}` 即作为文件上传（文本字段直接传值）；
-- **schema default 填充**：LLM 未传的可选参数自动填上 spec 声明的 `default`（避免下游默认值与 spec 声明不一致）；
-- **模板 `||` 默认值**：`{{response.owner.name || 未登记}}`，取值非空时忽略默认值（`"0"` 视为非空）；
-- **调用日志**：`GET /services/{name}/calls?limit=50`，内存环形缓冲 200 条（工具/状态/耗时 ms/错误码/消息摘要，重启清零），不落盘不含响应原文。
+- 表单/multipart 提交：requestBody 是 `multipart/form-data` 或 `application/x-www-form-urlencoded` 时，字段同样提为工具参数，invoker 按表单方式提交；字段值传 `{filename, content, encoding: "base64"}` 就作为文件上传（文本字段直接传值）；
+- schema default 填充：LLM 没传的可选参数自动填 spec 声明的 `default`（免得下游默认值和 spec 声明不一致）；
+- 模板 `||` 默认值：`{{response.owner.name || 未登记}}`，取值非空时忽略默认值（`"0"` 算非空）；
+- 调用日志：`GET /services/{name}/calls?limit=50`，内存环形缓冲 200 条（工具/状态/耗时 ms/错误码/消息摘要），重启清零，不落盘、不含响应原文。
 
-> 对照结论：路径参数转义（`quote(safe="")` 比 Unla `PathEscape` 更严）、cookie 参数、重定向 SSRF、解压、错误模型、注册期模板校验均已领先或持平；OTel/Prometheus、DB 版本管理、多租户、forward headers、per-tool 代理为刻意不采纳项。
+### 与 Unla 的对照、与商业网关的关系
 
-> 生态位（v0.4.0 起）：Kong AI Gateway 提供 MCP 治理但其 RBAC/OIDC 需要付费企业版，Zuplo 为 SaaS 托管；本网关的定位是**免费、自托管、单进程、air-gapped 可用，且 MCP 数据面 OAuth 2.1 resource server 与工具漂移可见性开箱即用**。
+> 对照结论：路径参数转义（`quote(safe="")` 比 Unla 的 `PathEscape` 更严）、cookie 参数、重定向 SSRF、解压、错误模型、注册期模板校验均已领先或持平；OTel/Prometheus、DB 版本管理、多租户、forward headers、per-tool 代理是刻意不做的。
 
-- **数据面 JWT 认证（v0.4.0）**：外部 IdP 模式（JWKS 验签 + iss/aud 校验 + 算法白名单 + RFC 9728 发现）与内置签发模式（HS256 短期 token、aud 绑定服务、密钥仅环境变量）；`X-Api-Key` 与 `Bearer` 双模式按服务独立选择。
-- **工具漂移可见性（v0.4.0，防 tool poisoning）**：每次 `PUT /services/{name}` 与 `POST /services/{name}/refresh` 返回 `tool_changes`（新增/下线/描述变化/入参变化四类 diff）；描述变化时附加「请人工复核」告警——描述即 LLM 的行为指令面，静默变更（rug pull）是 MCP 生态 2026 年公开报告的高频攻击面。
+商业网关方面：Kong AI Gateway 也有 MCP 治理，但 RBAC/OIDC 在它的付费企业版里；Zuplo 是 SaaS 托管。这个项目走另一条路——免费、自托管、单进程、air-gapped 能用，MCP 数据面的 OAuth 2.1 resource server 和工具变更可见性都内置。
 
-## 8. 项目结构（规划）
+## 8. 项目结构
 
 ```
 openapi-mcp-hub/
-├── README.md
+├── README.md / README.zh-CN.md / USAGE.md / CHANGELOG.md
 ├── pyproject.toml
 ├── docker-compose.yml          # 端口 20033 + data 卷
 ├── src/openapi_mcp_hub/
 │   ├── main.py                 # FastAPI 入口、启动恢复
 │   ├── admin.py                # 管理面 /services CRUD
 │   ├── registry.py             # 注册表：读写锁 + 落盘 + 恢复
-│   ├── mcp_host.py             # 每服务 FastMCP 实例，挂载 /mcp/{name}
+│   ├── mcp_host.py             # 每服务 MCP 实例，挂载 /mcp/{name}，数据面认证在这层
+│   ├── jwt_auth.py             # JWT 签发/验签（内置 HS256 + 外部 JWKS）
 │   ├── loader.py               # spec 加载/校验/$ref 解析（含循环检测）
-│   ├── models.py               # 中间模型：ApiEndpoint / ApiParam …
+│   ├── models.py               # 中间模型：ApiEndpoint / ApiParam / DataPlaneAuthn …
 │   ├── extractor.py            # 接口提取
 │   ├── generator.py            # ApiEndpoint → MCP Tool
-│   ├── invoker.py              # per-service httpx + 熔断 + 限流 + 错误映射
-│   └── config.py               # 环境变量与网关级配置
+│   ├── invoker.py              # per-service httpx + 熔断 + 限流 + 错误映射 + oauth2 token
+│   ├── db.py                   # 数据库注册源：内省 + 只读执行器
+│   ├── store.py                # 落盘后端：文件 / PostgreSQL
+│   ├── templates.py            # 响应模板渲染
+│   ├── config.py               # 环境变量与网关级配置
+│   └── static/index.html       # 控制台（单文件）
 ├── examples/
 │   ├── register-petstore.json  # 注册请求示例
 │   └── petstore-openapi.json
 └── tests/
     ├── fixtures/               # $ref、循环引用、deprecated、巨型 spec 样例
-    ├── test_loader.py / test_extractor.py / test_generator.py
+    ├── test_loader.py / test_extractor.py / test_generator.py / test_invoker.py
+    ├── test_admin.py / test_jwt_auth.py / test_db_mcp.py / test_db_mysql.py
     └── test_e2e.py             # 注册 → MCP 客户端 → mock API 全链路
 ```
 
 ## 9. 技术选型与环境要求
 
-- Python ≥ 3.10；`fastapi` + `uvicorn`、`mcp`（官方 SDK，FastMCP）、`httpx`、`pydantic`、`PyYAML`；测试 `pytest` + `respx`
+- Python ≥ 3.10；`fastapi` + `uvicorn`、`mcp`（官方 SDK，FastMCP）、`httpx`、`pydantic`、`PyYAML`、`PyJWT[crypto]`；测试 `pytest` + `respx`；
 - 网关环境变量：
 
 | 变量 | 说明 |
@@ -410,22 +415,26 @@ openapi-mcp-hub/
 | `OPENAPI_MCP_HUB_ADMIN_TOKEN` | 管理面 token（必填） |
 | `OPENAPI_MCP_HUB_DATA_DIR` | 注册数据目录，默认 `./data` |
 | `OPENAPI_MCP_HUB_HOST_ALLOWLIST` | 允许转发的目标主机/网段，逗号分隔；空 = 不限制 |
-| 各服务凭证 | 由注册时的 `token_env` 引用，如 `GRANDE_TOKEN` |
+| `OPENAPI_MCP_HUB_JWT_SECRET` | 内置 JWT 签发的密钥（仅 authn 为内置 jwt 模式时需要） |
+| 各服务凭证 | 由注册时的 `token_env` / `url_env` 引用，如 `GRANDE_TOKEN` |
 
-- 建议给网关一个内网域名（如 `mcp.internal.example`）：裸 IP 迁移时所有 agent 配置都得改。
+建议给网关一个内网域名（比如 `mcp.internal.example`）：用裸 IP 的话，迁移时所有 agent 配置都得改。
 
-## 10. 开发计划（Roadmap）
+## 10. Roadmap
 
-| 里程碑 | 内容 | 交付物 |
+| 里程碑 | 内容 | 状态 |
 |---|---|---|
-| **M1** ✅ | 网关骨架：FastAPI + Registry（落盘/恢复）+ Loader/Extractor/Generator + 管理面 CRUD + `/mcp/{name}` 挂载 + 双层鉴权 | 已交付：注册 petstore spec 后，MCP 客户端能列出并调用工具（e2e + 冒烟全链路通过） |
-| **M2** ✅ | 调用链加固：响应模板、SSRF 加固（DNS 核验/重定向逐跳/mapped IPv6）、结构化错误模型、Swagger 2.0 + OpenAPI 3.1、br/zstd 解压 | 已交付：121 项测试全通过（借鉴 Unla 设计，见第 7 节） |
-| **M3** ✅ | 可观测与 DX：调用日志（GET /services/{name}/calls）、预览端点（POST /services/preview + sample_response 模板渲染）、运行时工具白名单 allowed_tools、表单/multipart 提交、schema default 填充、模板 `\|\|` 默认值 | 已交付：138 项测试全通过；对照 Unla 逐项审查后仅吸收上述 6 项，其余（多租户/Redis/OTel/Prometheus/版本管理）明确不做 |
-| **M4** ✅ | SSE 兼容端点（`/mcp/{name}/sse` + `/message`）、健康探测（GET /services/{name}/health）、Docker 部署（Dockerfile + compose） | 已交付：双 transport 与 streamable 共享回调与鉴权、HEAD/GET 探测 + 凭证 env 自检、镜像构建与容器全链路验证；剩导出独立 server、HA |
-| **M5-1** ✅ | 数据库 → MCP：PostgreSQL / MySQL 8 注册源，六层强制只读 | 已交付：内省生成查询/描述/schema 工具，只读在六层强制（见第 2.5 节）；M5-2 per_table 与 M5-3 写模式经评审暂不做 |
-| **v0.3.0** ✅ | OAuth2 `client_credentials` 目标认证（token 代取/缓存/提前 60s 刷新/401 单次重试）· `POST /services/{name}/refresh` 热更新 · `GET /services/{name}/stats` 调用统计 · 控制台 auth 表单修复 | 已交付：测试 163 项全通过 |
-| **v0.4.0** ✅ | **JWT 数据面认证（MCP OAuth 2.1 resource server：外部 IdP JWKS 验签 + RFC 9728 发现 / 内置短期签发）** · tool poisoning 漂移 diff（PUT/refresh 返回 `tool_changes` 四类工具集变更 + 描述变化人工复核告警） | 已交付：测试 177 项全通过 |
+| M1 | 网关骨架：FastAPI + Registry（落盘/恢复）+ Loader/Extractor/Generator + 管理面 CRUD + `/mcp/{name}` 挂载 + 双层鉴权 | ✅ 注册 petstore 后 MCP 客户端能列工具、调工具，e2e 通过 |
+| M2 | 调用链加固：响应模板、SSRF 加固（DNS 核验/重定向逐跳/mapped IPv6）、结构化错误模型、Swagger 2.0 + OpenAPI 3.1、br/zstd 解压 | ✅ 121 项测试通过 |
+| M3 | 可观测与 DX：调用日志、预览端点、allowed_tools、表单/multipart、schema default 填充、模板 `\|\|` 默认值 | ✅ 138 项测试通过；对照 Unla 吸收 6 项，多租户/Redis/OTel/Prometheus/版本管理明确不做 |
+| M4 | SSE 兼容端点、健康探测、Docker 部署 | ✅ 双 transport、HEAD/GET 探测 + 凭证自检、镜像与容器全链路验证；剩独立 server 导出、HA |
+| M5-1 | 数据库 → MCP：PostgreSQL / MySQL 8，六层强制只读 | ✅ 三件套工具上线；M5-2 per_table 与 M5-3 写模式评审后搁置 |
+| v0.3.0 | oauth2 client_credentials 目标认证、refresh 热更新、调用统计、控制台 auth 表单修复 | ✅ 163 项测试通过 |
+| v0.4.0 | JWT 数据面认证（OAuth 2.1 resource server）、tool poisoning 漂移 diff | ✅ 177 项测试通过 |
+
+往后：官方 MCP registry 发布、工具语义搜索/路由、控制台的 jwt 配置界面、Prometheus 指标、限流设计讨论。
 
 ## 11. 贡献与联系
 
 - 分支策略：`main` 为主干，功能开发用 `feat/*`，合并前过单测；
+- 提 issue 前看一眼模板（bug_report / feature_request），CONTRIBUTING.md 里有开发环境说明。
