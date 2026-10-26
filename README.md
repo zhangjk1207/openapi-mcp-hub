@@ -2,12 +2,14 @@
 
 **Turn any OpenAPI spec — or a live PostgreSQL / MySQL database — into production-ready MCP endpoints. One process. One port. Zero code.**
 
-[![CI](https://github.com/zhangjk1207/openapi-mcp-hub/actions/workflows/ci.yml/badge.svg)](../../actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-6e7bf4.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg)](pyproject.toml)
-[![中文文档](https://img.shields.io/badge/README-中文-red.svg)](README.zh-CN.md)
+[![CI](https://github.com/zhangjk1207/openapi-mcp-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/zhangjk1207/openapi-mcp-hub/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-6e7bf4.svg)](https://github.com/zhangjk1207/openapi-mcp-hub/blob/main/LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg)](https://github.com/zhangjk1207/openapi-mcp-hub/blob/main/pyproject.toml)
+[![中文文档](https://img.shields.io/badge/README-中文-red.svg)](https://github.com/zhangjk1207/openapi-mcp-hub/blob/main/README.zh-CN.md)
 
-![demo](docs/demo.gif)
+![demo](https://raw.githubusercontent.com/zhangjk1207/openapi-mcp-hub/main/docs/demo.gif)
+
+> Install: `pip install openapi-mcp-hub` or `uvx openapi-mcp-hub` · Python 3.10+ · MIT
 
 
 POST an `openapi.json` to the gateway and you instantly get an MCP endpoint any agent can call:
@@ -171,9 +173,25 @@ curl -X POST $GW/services/crm/token -H "Authorization: Bearer $ADMIN" -d '{"ttl_
 
 ## Console screenshots
 
-Register (with file upload / drag & drop), inspect tools & call logs, rotate keys — all from one static page:
+Real console, not mockups — REST and database sources in one table, generated tool sets,
+health probes and key rotation, all from a single static page: no build chain, no external
+assets, works air-gapped.
 
-<p align="center"><em>screenshots coming with the first tagged release</em></p>
+**Services** — REST and database sources side by side, `/mcp/{name}` per row:
+
+![Services list](https://raw.githubusercontent.com/zhangjk1207/openapi-mcp-hub/main/docs/screenshots/console-list.png)
+
+**Service detail** — endpoint, generated tools with descriptions, health probe, key rotation:
+
+![Service detail](https://raw.githubusercontent.com/zhangjk1207/openapi-mcp-hub/main/docs/screenshots/console-detail.png)
+
+**Register a REST API** — spec upload / paste, path filters, target auth by env var name:
+
+![Register a REST API](https://raw.githubusercontent.com/zhangjk1207/openapi-mcp-hub/main/docs/screenshots/console-register-rest.png)
+
+**Register a database** — DSN referenced by env var name only, read-only tool trio generated:
+
+![Register a database](https://raw.githubusercontent.com/zhangjk1207/openapi-mcp-hub/main/docs/screenshots/console-register-db.png)
 
 ## Roadmap
 
@@ -184,12 +202,19 @@ Register (with file upload / drag & drop), inspect tools & call logs, rotate key
 - [ ] M5-3 — write operations (opt-in, statement allowlist)
 - [ ] Metrics endpoint (Prometheus) & key expiry
 - [ ] Per-tenant quotas / rate limiting
+- [ ] Per-service circuit breaking
+
+**Not implemented today** — do not plan around these: circuit breaking, per-tenant
+rate limiting or quotas, HA / multi-replica coordination, Prometheus metrics,
+database write operations, per-table database tools, API-key expiry. Safety isolation
+today is per-service httpx client + independent timeout + connection-pool cap + the
+SSRF allowlist, all inside a single process.
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -q          # 164 tests (pg/mysql suites opt-in via env DSN)
+pytest tests/ -q          # 178 pass; 22 opt-in integration tests skip without PG/MySQL DSNs
 ```
 
 ## License

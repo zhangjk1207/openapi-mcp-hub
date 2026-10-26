@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.1 (2026-10-26)
+
+First release on PyPI. No behavior changes — packaging, docs and metadata only.
+
+### Added
+
+- **PyPI release pipeline** (`.github/workflows/publish.yml`): builds sdist + wheel,
+  runs `twine check --strict`, asserts `pyproject.toml` version == release tag, smoke-tests
+  the built wheel in a clean venv, then publishes via PyPI Trusted Publishing (OIDC, no
+  stored token). `pip install openapi-mcp-hub` / `uvx openapi-mcp-hub` now work.
+- **`SECURITY.md`**: reporting channel (private advisories), supported versions,
+  explicit in-scope list (SSRF allowlist, read-only enforcement, credential exposure,
+  data/management-plane auth, tool-poisoning visibility) and out-of-scope list
+  (demo-mode fixed credentials, missing TLS, single shared admin token, missing
+  rate limiting), plus an operator hardening checklist.
+- **`Makefile`**: `make install / test / lint / check / build / clean`. Ruff rules live in
+  `pyproject.toml`, so local and CI runs use the same standard.
+- **Console screenshots** in both READMEs (`docs/screenshots/`), replacing the
+  "screenshots coming with the first tagged release" placeholder left over since v0.2.1.
+- **Test**: `tests/test_version.py` asserts `__version__` matches `pyproject.toml`.
+
+### Changed
+
+- Packaging metadata completed for PyPI: English summary, `keywords`, `classifiers`,
+  `[project.urls]` (Homepage / Repository / Issues / Changelog / Documentation), and
+  PEP 639 license expression (`license = "MIT"` + `license-files`); build requires
+  `setuptools>=77`.
+
+### Fixed
+
+- **`README.zh-CN.md` claimed circuit breaking and per-service rate limiting**, neither of
+  which exists in the code — contradicting the English README, which correctly lists rate
+  limiting as roadmap. Architecture diagram, isolation notes and the project-structure
+  annotations now describe what actually ships (per-service httpx client, independent
+  timeout, connection-pool cap, one 401 retry for OAuth2).
+- Both READMEs now state explicitly what is **not** implemented (circuit breaking, quotas /
+  rate limiting, HA, Prometheus metrics, database writes, per-table tools, key expiry)
+  instead of leaving it to be inferred from unchecked roadmap boxes.
+- README test count corrected (`164` → `177 pass, 22 opt-in integration tests`).
+
 ## 0.4.0 (2026-10-14)
 
 ### Added

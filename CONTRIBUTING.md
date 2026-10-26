@@ -7,15 +7,19 @@ Thanks for considering a contribution.
 ```bash
 git clone https://github.com/zhangjk1207/openapi-mcp-hub
 cd openapi-mcp-hub
-python3 -m pip install -e ".[dev]"
+make install        # 建 .venv 并装 dev 依赖 + ruff
 ```
 
 Python **3.10+**; CI covers 3.10 / 3.11 / 3.12.
 
 ## Before you open a PR
 
-1. **Lint**: `ruff check src tests` — must pass (CI runs it on every push and PR).
-2. **Tests**: `pytest` — all tests must pass. The suite uses `pytest-asyncio` for async paths and `respx` for HTTP mocking; CI additionally runs the Postgres-backed tests against a real `postgres:16` service.
+```bash
+make check          # ruff check + pytest，与 CI 同款
+```
+
+1. **Lint**: `make lint` (`ruff check src tests`) — must pass (CI runs it on every push and PR). Rules live in `pyproject.toml` under `[tool.ruff]`, so local and CI agree.
+2. **Tests**: `make test` (`pytest`) — all tests must pass. The suite uses `pytest-asyncio` for async paths and `respx` for HTTP mocking; CI additionally runs the Postgres-backed tests against a real `postgres:16` service.
 3. **Public surface is contractual**: the gateway API (`/services`, `/mcp/{service}`), environment variables and config file formats. Breaking changes need a strong reason and a migration note in the PR description.
 4. New registration-source or MCP behaviors should come with a test under `tests/`.
 
@@ -29,6 +33,8 @@ Python **3.10+**; CI covers 3.10 / 3.11 / 3.12.
 ## Reporting bugs
 
 Please use the issue templates and include: gateway version (or commit), Python version, run mode (`docker compose` / `openapi-mcp-hub` entry point / from source), the registration payload (redact all tokens and keys), and logs.
+
+**Security issues**: do not open a public issue — see [SECURITY.md](SECURITY.md).
 
 ## Commits & PRs
 

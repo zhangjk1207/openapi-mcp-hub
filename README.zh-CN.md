@@ -8,7 +8,7 @@ OpenAPI → MCP 网关。起一个服务（比如 `localhost:20033`），POST �
 
 网关根路径带一个控制台，单文件静态页，没有构建链和外部资源。能表单注册（带预检）、看服务列表和详情、健康探测、调用日志、轮换 key。内网环境直接用。
 
-> 当前版本 v0.4.0，177 项测试通过。怎么用看 [USAGE.md](USAGE.md)，英文文档 [README.md](README.md)。
+> 当前版本 v0.4.1，178 项测试通过。怎么用看 [USAGE.md](USAGE.md)，英文文档 [README.md](README.md)。
 
 ![demo](docs/demo.gif)
 
@@ -41,7 +41,7 @@ OpenAPI → MCP 网关。起一个服务（比如 `localhost:20033`），POST �
 │ 兼容：GET /mcp/{name}/sse + POST /mcp/{name}/message（老客户端）  │
 │ Registry（读写锁，启动全量恢复）                                     │
 │ Loader → Extractor → Generator → 动态挂载 / 卸载                    │
-│ Invoker：per-service httpx client + 超时 + 熔断 + 限流              │
+│ Invoker：per-service httpx client + 超时 + 连接池隔离 + 401 重试    │
 └──────────────────────────────┬──────────────────────────────────────┘
                                ▼
                         各目标 REST API
@@ -186,6 +186,18 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 
 镜像里验证过的：容器内注册、数据卷重启恢复、health 凭证自检（缺 env 时 `auth_env_ok:false`）、streamable 与 SSE 双通道全链路。
 
+### 控制台
+
+注册（文件上传 / 拖拽）、查看生成工具与调用日志、轮换 key，全在一个静态页里：无构建链、无外部资源，断网内网也能用。
+
+| 服务列表 | 服务详情 |
+|---|---|
+| ![服务列表](docs/screenshots/console-list.png) | ![服务详情](docs/screenshots/console-detail.png) |
+
+| 注册 REST API | 注册数据库（只读） |
+|---|---|
+| ![注册 REST API](docs/screenshots/console-register-rest.png) | ![注册数据库](docs/screenshots/console-register-db.png) |
+
 ## 4. 关键决策（已定）
 
 | 决策点 | 结论 | 理由 |
@@ -296,8 +308,8 @@ spec 片段：
 
 隔离：
 
-- 每个服务独立 httpx client（独立超时/连接池）+ 熔断，一个慢上游拖不垮全局；
-- 每服务并发限流，保护目标 API；
+- 每个服务独立 httpx client（独立超时 / 独立连接池，`minsize=1, maxsize=5`），一个慢上游拖不垮全局；
+- 熔断与 per-service 并发限流**尚未实现**（见 §10 Roadmap），当前靠独立超时 + 连接池上限把故障关在单服务内；
 - 大 spec 的解析丢线程池，不阻塞事件循环。
 
 安全：
@@ -377,6 +389,8 @@ spec 片段：
 ```
 openapi-mcp-hub/
 ├── README.md / README.zh-CN.md / USAGE.md / CHANGELOG.md
+├── SECURITY.md                 # 漏洞报告渠道、in/out-of-scope、运维加固清单
+├── CONTRIBUTING.md / Makefile  # make install/test/lint/check/build
 ├── pyproject.toml
 ├── docker-compose.yml          # 端口 20033 + data 卷
 ├── src/openapi_mcp_hub/
@@ -389,7 +403,7 @@ openapi-mcp-hub/
 │   ├── models.py               # 中间模型：ApiEndpoint / ApiParam / DataPlaneAuthn …
 │   ├── extractor.py            # 接口提取
 │   ├── generator.py            # ApiEndpoint → MCP Tool
-│   ├── invoker.py              # per-service httpx + 熔断 + 限流 + 错误映射 + oauth2 token
+│   ├── invoker.py              # per-service httpx + 超时 + 错误映射 + oauth2 token
 │   ├── db.py                   # 数据库注册源：内省 + 只读执行器
 │   ├── store.py                # 落盘后端：文件 / PostgreSQL
 │   ├── templates.py            # 响应模板渲染
@@ -432,7 +446,9 @@ openapi-mcp-hub/
 | v0.3.0 | oauth2 client_credentials 目标认证、refresh 热更新、调用统计、控制台 auth 表单修复 | ✅ 163 项测试通过 |
 | v0.4.0 | JWT 数据面认证（OAuth 2.1 resource server）、tool poisoning 漂移 diff | ✅ 177 项测试通过 |
 
-往后：官方 MCP registry 发布、工具语义搜索/路由、控制台的 jwt 配置界面、Prometheus 指标、限流设计讨论。
+往后：官方 MCP registry 发布、工具语义搜索/路由、控制台的 jwt 配置界面、Prometheus 指标。
+
+**目前尚未实现**（不要按这些做规划）：熔断、per-service 并发限流 / 配额、HA 与多副本协同、Prometheus 指标、数据库写操作、per_table 表级工具、api_key 过期。当前的隔离手段是「每服务独立 httpx client + 独立超时 + 连接池上限 + SSRF allowlist」，全部在单进程内。
 
 ## 11. 贡献与联系
 

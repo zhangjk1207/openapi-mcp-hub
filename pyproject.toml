@@ -1,15 +1,40 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "openapi-mcp-hub"
-version = "0.4.0"
-description = "OpenAPI → MCP 网关：POST 一份 openapi.json，即刻生成可接入 agent 的 MCP 端点"
+version = "0.4.1"
+description = "Turn any OpenAPI spec — or a live PostgreSQL/MySQL database — into production-ready MCP endpoints. One process, one port, zero code."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "openapi-mcp-hub contributors" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "openapi",
+    "swagger",
+    "gateway",
+    "ai-agents",
+    "llm-tools",
+    "claude",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Software Development :: Code Generators",
+]
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
@@ -40,11 +65,18 @@ dev = [
 [project.scripts]
 openapi-mcp-hub = "openapi_mcp_hub.main:main"
 
+[project.urls]
+Homepage = "https://github.com/zhangjk1207/openapi-mcp-hub"
+Repository = "https://github.com/zhangjk1207/openapi-mcp-hub"
+Issues = "https://github.com/zhangjk1207/openapi-mcp-hub/issues"
+Changelog = "https://github.com/zhangjk1207/openapi-mcp-hub/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/zhangjk1207/openapi-mcp-hub/blob/main/USAGE.md"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-openapi_mcp_hub = ["demo_spec.json"]
+openapi_mcp_hub = ["demo_spec.json", "static/*.html", "static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
