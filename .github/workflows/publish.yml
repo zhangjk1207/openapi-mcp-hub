@@ -54,8 +54,25 @@ jobs:
           /tmp/smoke/bin/pip install --quiet dist/*.whl
           /tmp/smoke/bin/python -c "import importlib.resources as res, openapi_mcp_hub; \
             assert res.files('openapi_mcp_hub').joinpath('demo_spec.json').is_file(), 'demo spec missing'; \
+            assert res.files('openapi_mcp_hub').joinpath('static/index.html').is_file(), 'console html missing from wheel'; \
             print('wheel import OK, version', openapi_mcp_hub.__version__)"
           test -x /tmp/smoke/bin/openapi-mcp-hub
+          /tmp/smoke/bin/openapi-mcp-hub --version
+          # 桥是只吃 stdio 的客户端与官方 registry 的入口，缺了就是发一个装不上的版本
+          /tmp/smoke/bin/openapi-mcp-hub bridge --help >/dev/null
+          # 真启动一次：console 与 healthz 只有在 wheel 里带上 static/ 时才 200
+          OPENAPI_MCP_HUB_ADMIN_TOKEN=ci /tmp/smoke/bin/openapi-mcp-hub \
+            --host 127.0.0.1 --port 21099 --data-dir /tmp/smoke-data >/tmp/smoke.log 2>&1 &
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:21099/healthz >/dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          cat /tmp/smoke.log | tail -20
+          test "$ok" = "1" || { echo "healthz never came up"; exit 1; }
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:21099/)" = "200" || { echo "console not served"; exit 1; }
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:21099/mcp/nope)" = "404" || { echo "unknown service should 404"; exit 1; }
+          echo "console + healthz OK from the built wheel"
 
       - uses: actions/upload-artifact@v4
         with:
