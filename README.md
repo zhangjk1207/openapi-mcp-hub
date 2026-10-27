@@ -5,7 +5,7 @@
 [![CI](https://github.com/zhangjk1207/openapi-mcp-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/zhangjk1207/openapi-mcp-hub/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-6e7bf4.svg)](https://github.com/zhangjk1207/openapi-mcp-hub/blob/main/LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg)](https://github.com/zhangjk1207/openapi-mcp-hub/blob/main/pyproject.toml)
-[![中文文档](https://img.shields.io/badge/README-中文-red.svg)](https://github.com/zhangjk1207/openapi-mcp-hub/blob/main/README.zh-CN.md)
+[![中文文档](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-red.svg)](https://github.com/zhangjk1207/openapi-mcp-hub/blob/main/README.zh-CN.md)
 
 ![demo](https://raw.githubusercontent.com/zhangjk1207/openapi-mcp-hub/main/docs/demo.gif)
 
