@@ -8,7 +8,7 @@ OpenAPI → MCP 网关。起一个服务（比如 `localhost:20033`），POST �
 
 网关根路径带一个控制台，单文件静态页，没有构建链和外部资源。能表单注册（带预检）、看服务列表和详情、健康探测、调用日志、轮换 key。内网环境直接用。
 
-> 当前版本 v0.5.0，247 项测试通过。怎么用看 [USAGE.md](USAGE.md)，英文文档 [README.md](README.md)。
+> 当前版本 v0.6.0，266 项测试通过。怎么用看 [USAGE.md](USAGE.md)，英文文档 [README.md](README.md)。
 
 ![demo](docs/demo.gif)
 
@@ -85,7 +85,7 @@ claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
 
 ```bash
 pip install -e ".[dev]"     # pytest/pytest-asyncio/respx 等一起装上
-python -m pytest tests/      # 177 个用例：单测 + respx mock + e2e（真实 uvicorn 双服务 + MCP 客户端）
+python -m pytest tests/      # 266 个用例：单测 + respx mock + e2e（真实 uvicorn 双服务 + MCP 客户端）
 ```
 
 适配说明：基于 mcp SDK 2.x（2.3+）。lowlevel `Server` 构造器注入 `on_list_tools`/`on_call_tool` 回调，types 是 snake_case，入参校验 SDK 2.x 不再内置，网关用 jsonschema 按 inputSchema 自己做。运行环境建议项目独立 venv（`python -m venv .venv && .venv/bin/pip install -e ".[dev]"`），不碰机器上的共享环境。
@@ -310,6 +310,21 @@ tools/list 会整个进入模型上下文，所以“工具怎么描述、怎么
 | `409` | 先查当前状态再决定 |
 | `422` | 按错误信息里的字段名修正 |
 | `429` / `5xx` / 超时 | 退避后重试；连续失败说明上游异常 |
+
+**④ 渐进式工具发现（progressive tool discovery）**：工具数 ≥8 时自动挂一个 `search_tools`
+元工具；超过 `--advertise-limit`（默认 50）时 `tools/list` 只列最常用的那批，其余靠检索发现。
+
+检索是**纯本地 BM25 词法索引**：索引只来自工具自身的文字（名称、路径、描述、参数名），
+不引 embedding、不调模型、不加新依赖。中文用字符 bigram 切分，所以「删除宠物」「按 petId 查」
+这种说法都能命中。
+
+为什么默认 50：Anthropic 官方文档称可用工具超过 30–50 个后选择准确率开始下降，而五个 server
+的工具定义就有约 55k token。注册一个真实 API（Stripe 量级）时，把所有工具一次性塞给模型
+是网关自己造成的不可用。
+
+`tools/list` 同时声明 `ttlMs`（5 分钟）与 `cacheScope: public`，并固定「只读优先 + 名字升序」的
+顺序——规范明确要求确定性顺序以提升 prompt cache 命中率。这两项只对 2026-07-28 及以上的客户端生效，
+旧版客户端会忽略。
 
 ## 4. 关键决策（已定）
 
@@ -560,6 +575,8 @@ openapi-mcp-hub/
 | M5-1 | 数据库 → MCP：PostgreSQL / MySQL 8，六层强制只读 | ✅ 三件套工具上线；M5-2 per_table 与 M5-3 写模式评审后搁置 |
 | v0.3.0 | oauth2 client_credentials 目标认证、refresh 热更新、调用统计、控制台 auth 表单修复 | ✅ 163 项测试通过 |
 | v0.4.0 | JWT 数据面认证（OAuth 2.1 resource server）、tool poisoning 漂移 diff | ✅ 177 项测试通过 |
+| v0.5.0 | 工具安全标注、描述压缩、可自纠正错误、CLI 参数、多架构镜像 | ✅ 247 项测试通过 |
+| v0.6.0 | 渐进式工具发现（search_tools + advertise limit）、`ttlMs`/`cacheScope`、确定性顺序 | ✅ 266 项测试通过 |
 | v0.5.0 | 面向 agent 的工具质量：安全标注、描述/schema 压缩、可自纠正错误提示、CLI 参数、多架构镜像 | ✅ 247 项测试通过 |
 
 往后：官方 MCP registry 发布、工具语义搜索/路由（工具很多时让 agent 只看到需要的那几个）、控制台的 jwt 配置界面。

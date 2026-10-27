@@ -407,7 +407,12 @@ class Registry:
         http_cfg = ServiceHttpConfig(base_url=base_url, auth=reg.auth, timeout_s=reg.timeout_s)
         invoker = Invoker(http_cfg)
         app = McpServiceApp(
-            reg.name, reg.title, tools, invoker, allowed_tools=reg.allowed_tools or None
+            reg.name,
+            reg.title,
+            tools,
+            invoker,
+            allowed_tools=reg.allowed_tools or None,
+            advertise_limit=self.cfg.advertise_limit,
         )
 
         record: dict[str, Any] = {
@@ -504,6 +509,7 @@ class Registry:
             tools,
             allowed_tools=reg.allowed_tools or None,
             db_executor=executor,
+            advertise_limit=self.cfg.advertise_limit,
         )
         record: dict[str, Any] = {
             "name": reg.name,

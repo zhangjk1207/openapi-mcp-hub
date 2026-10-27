@@ -218,7 +218,8 @@ Credentials are referenced **by env var name only** — nothing sensitive is per
 | **Filtering** | Path include/exclude globs, tool whitelist, `max_tools` cap, response templates |
 | **Persistence** | JSON file or PostgreSQL backend, automatic one-way migration |
 | **Console** | Single-file admin UI, zero build chain, zero external assets — works in air-gapped intranets |
-| **Agent-facing tooling** | `readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint` inferred per tool, so agents can auto-run reads and ask before deletes; tool descriptions compacted to ≤320 chars and schema descriptions to ≤160 (measured 11%–75% smaller `tools/list` on verbose specs) |
+| **Agent-facing tooling** | `readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint` inferred per tool, so agents can auto-run reads and ask before deletes; tool descriptions compacted to ≤320 chars and schema descriptions to ≤160 (measured 11%–75% smaller `tools/list` on verbose specs); `tools/list` declares `ttlMs`/`cacheScope` and a deterministic (read-only-first, then alphabetical) order for prompt-cache hits |
+| **Progressive tool discovery** | Services with ≥8 tools get a `search_tools` meta-tool (BM25 over names, paths, descriptions and parameter names — no embeddings, no model calls, no new dependencies). Above `--advertise-limit` (default 50) only the most useful tools are listed and the rest are found by search: a 1000-endpoint API no longer floods the context window |
 | **Actionable errors** | Every failure carries a machine-readable `data.hint` telling the agent what to change or whether retrying is pointless (`401` → "server-side, retrying will not help", `422` → "fix the field named in the message", validation → lists legal parameter names) |
 | **Observability** | Health probes, in-memory ring call log (last 20/service), call stats (ok-rate / p50 / p95 / top tools), structured error codes (`-32000`/-`32602`/-`32002`) |
 
@@ -306,7 +307,7 @@ SSRF allowlist, all inside a single process.
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -q          # 247 pass; 22 opt-in integration tests skip without PG/MySQL DSNs
+pytest tests/ -q          # 266 pass; 22 opt-in integration tests skip without PG/MySQL DSNs
 ```
 
 ## License

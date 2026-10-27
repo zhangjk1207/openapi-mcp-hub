@@ -158,6 +158,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="uvicorn 日志级别（默认 info）",
     )
     p.add_argument(
+        "--advertise-limit",
+        type=int,
+        help="tools/list 一次列出的工具数上限，超出部分由 search_tools 检索（默认 50，0 = 不限制）",
+    )
+    p.add_argument(
         "--print-config",
         action="store_true",
         help="打印生效配置（凭证脱敏）后退出，用于排查启动问题",
@@ -179,6 +184,8 @@ def _apply_cli_overrides(cfg: GatewayConfig, args: argparse.Namespace) -> Gatewa
         cfg.host_allowlist = [x.strip() for x in args.host_allowlist.split(",") if x.strip()]
     if args.docs:
         cfg.docs_enabled = True
+    if args.advertise_limit is not None:
+        cfg.advertise_limit = max(0, args.advertise_limit)
     return cfg
 
 
@@ -192,6 +199,7 @@ def _describe_config(cfg: GatewayConfig) -> str:
         f"host_allowlist   : {', '.join(cfg.host_allowlist) or '不限制（内网默认）'}",
         f"docs             : {'on' if cfg.docs_enabled else 'off'}",
         f"max_tools/service: {cfg.default_max_tools}",
+        f"advertise_limit  : {cfg.advertise_limit or '不限制'}",
     ]
     return "\n".join(lines)
 

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.6.0 (2026-10-26)
+
+Progressive tool discovery: the gateway stops flooding the model's context window. No breaking
+changes; the new meta-tool is additive and the advertise cap can be disabled.
+
+### Added
+
+- **`search_tools` meta-tool** — services with ≥8 tools get a BM25 lexical search tool over tool
+  names, paths, descriptions and parameter names. Pure Python, no embeddings, no model calls, no
+  new dependencies; CJK is handled with character bigrams so Chinese queries work. Renames itself
+  to `hub_search_tools` if the target API already exposes a `search_tools` operation.
+- **`tools/list` advertise cap** (`--advertise-limit` / `OPENAPI_MCP_HUB_ADVERTISE_LIMIT`,
+  default 50, `0` disables) — above the cap, only the most useful tools are listed and the search
+  tool reports how many are hidden. Rationale: Anthropic's measurements show tool-selection
+  accuracy degrading past 30–50 tools, and five MCP servers alone costing ~55k tokens of
+  definitions. A 1000-endpoint API previously put ~200k tokens into every request.
+- **`ttlMs` / `cacheScope` on `tools/list`** — 5-minute TTL, `public` scope (the list depends only
+  on service config, not on the caller). Emitted to 2026-07-28 clients; older clients ignore it.
+
+### Changed
+
+- `tools/list` order is now deterministic: read-only tools first, then alphabetical. This puts the
+  safe tools in front of the agent and gives the prompt cache a stable prefix, as the spec asks.
+
+### Tests
+
+- 266 passing (+22 opt-in integration tests skipped without PG/MySQL DSNs), including 19 new
+  cases for tokenisation, BM25 ranking, truncation, cache hints, name-collision fallback and the
+  modern-protocol envelope.
+
 ## 0.5.0 (2026-10-26)
 
 Agent-facing tool quality. No breaking changes: every new capability is on by default with

@@ -14,6 +14,9 @@ ENV_PREFIX = "OPENAPI_MCP_HUB"
 
 # 默认单服务工具数软上限（工具过多会显著降低 LLM 选择准确率）
 DEFAULT_MAX_TOOLS = 100
+# tools/list 一次列出的工具数上限。超过时只列前 N 个，其余靠 search_tools 检索。
+# 依据：Anthropic 实测可用工具超过 30–50 个后选择准确率开始下降。0 = 不限制。
+DEFAULT_ADVERTISE_LIMIT = 50
 # openapi 文本体积上限（字节）
 MAX_SPEC_BYTES = 10 * 1024 * 1024
 # $ref 解析深度上限
@@ -33,6 +36,8 @@ class GatewayConfig:
     # /docs 与 /openapi.json：默认关闭。管理面 schema 没必要对外暴露，
     # 控制台已覆盖全部操作；需要时用 OPENAPI_MCP_HUB_DOCS=1 打开。
     docs_enabled: bool = False
+    # tools/list 暴露上限（0 = 不限制）；超出部分通过 search_tools 元工具检索
+    advertise_limit: int = DEFAULT_ADVERTISE_LIMIT
 
     @classmethod
     def from_env(cls) -> "GatewayConfig":
@@ -49,6 +54,12 @@ class GatewayConfig:
             "yes",
             "on",
         }
+        try:
+            advertise_limit = int(
+                os.environ.get(f"{ENV_PREFIX}_ADVERTISE_LIMIT", DEFAULT_ADVERTISE_LIMIT)
+            )
+        except ValueError:
+            advertise_limit = DEFAULT_ADVERTISE_LIMIT
         return cls(
             admin_token=admin_token,
             data_dir=data_dir,
@@ -57,6 +68,7 @@ class GatewayConfig:
             port=port,
             database_url=database_url,
             docs_enabled=docs_enabled,
+            advertise_limit=max(0, advertise_limit),
         )
 
     def target_host_allowed(self, url: str) -> bool:

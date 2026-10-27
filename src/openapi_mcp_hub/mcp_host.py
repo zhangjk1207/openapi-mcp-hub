@@ -41,9 +41,17 @@ from .invoker import Invoker
 from .db import DbExecutor
 from .jwt_auth import JwtAuthnError, verify_token, www_authenticate_header
 from .models import DataPlaneAuthn, ToolDef
+from .search import ToolIndex
 from .templates import render_response
 
 logger = logging.getLogger(__name__)
+
+# 工具数达到该值时自动挂一个 search_tools 元工具：少于它时 agent 直接扫完全部
+# 工具名更省事，多一个元工具反而增加噪声。
+SEARCH_TOOL_MIN_TOOLS = 8
+# tools/list 的缓存提示（规范鼓励服务端声明，让客户端/网关缓存以提升 prompt cache
+# 命中率）。取 5 分钟：spec 热更新后客户端最迟 5 分钟看到新工具，不至于长期拿到旧列表。
+TOOLS_LIST_TTL_MS = 300_000
 
 
 def _tool_annotations(tool: ToolDef) -> ToolAnnotations | None:
@@ -73,6 +81,82 @@ def _schema_hint(tool: ToolDef) -> str | None:
     return "".join(parts)
 
 
+def _index_entry(tool: ToolDef) -> tuple[str, str, str]:
+    """一个工具在检索索引里的（名称 / 索引文本 / 一行摘要）。
+
+    索引文本只取工具自身的文字，不引外部数据：名称、摘要、描述、路径、方法、
+    参数名。参数名很重要——用户通常会有 “按 id 查” 这种说法。
+    """
+    parts = [tool.name, tool.description or ""]
+    props = (tool.input_schema or {}).get("properties") or {}
+    if props:
+        parts.append(" ".join(props))
+    ep = tool.endpoint
+    if ep is not None:
+        parts.append(f"{ep.method} {ep.path}")
+        if ep.summary:
+            parts.append(ep.summary)
+        if ep.tags:
+            parts.append(" ".join(ep.tags))
+    summary = (tool.description or "").split("\n")[0][:120]
+    return tool.name, " ".join(parts), summary
+
+
+_SEARCH_TOOL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": "要做什么，用自然语言描述（中英文均可），例如“查询订单状态”。",
+        },
+        "limit": {
+            "type": "integer",
+            "description": "最多返回多少个工具（默认 8）。",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 8,
+        },
+    },
+    "required": ["query"],
+    "additionalProperties": False,
+}
+
+_SEARCH_TOOL_ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+
+
+def _build_search_tool(name: str, total: int) -> ToolDef:
+    return ToolDef(
+        name=name,
+        description=f"按关键词检索本服务的工具（共 {total} 个）。",
+        input_schema=_SEARCH_TOOL_SCHEMA,
+        annotations=_SEARCH_TOOL_ANNOTATIONS,
+    )
+
+
+def _search_tool_for(tool: ToolDef, *, total: int, truncated: int) -> Tool:
+    """构造暴露给客户端的检索工具（描述里带上总数与截断信息）。"""
+    desc = (
+        f"按关键词检索本服务的工具（共 {total} 个）。"
+        "返回最匹配的工具名 + 一行摘要；确定工具名后用 tools/call 直接调用。"
+    )
+    if truncated:
+        desc += (
+            f"注意：tools/list 只列出了最常用的 {total - truncated} 个，"
+            f"另有 {truncated} 个需先检索才能发现。"
+        )
+    return Tool(
+        name=tool.name,
+        description=desc,
+        input_schema=tool.input_schema,
+        annotations=ToolAnnotations(**annotations_to_dict(tool.annotations or {})),
+    )
+
+
 class McpServiceApp:
     """单个服务的 MCP 运行实例（Server + SessionManager + 生命周期）。"""
 
@@ -85,6 +169,7 @@ class McpServiceApp:
         *,
         allowed_tools: list[str] | None = None,
         db_executor: DbExecutor | None = None,
+        advertise_limit: int = 0,
     ):
         self.name = name
         self.title = title
@@ -92,6 +177,14 @@ class McpServiceApp:
         self.invoker = invoker
         self.db_executor = db_executor
         self._tool_map = {t.name: t for t in tools}
+        # tools/list 对外暴露的上限（0 = 不限制）。超过时只列前 N 个，其余靠 search_tools 检索。
+        self._advertise_limit = max(0, int(advertise_limit))
+        # 词法索引（progressive tool discovery）：仅在暴露工具较多时启用
+        self._index = ToolIndex([_index_entry(t) for t in tools])
+        self._search_tool_name = (
+            "search_tools" if "search_tools" not in self._tool_map else "hub_search_tools"
+        )
+        self._search_tool = _build_search_tool(self._search_tool_name, len(tools))
         # 运行时工具白名单（空 = 全部暴露；list/call 两层都生效）
         self._allowed: set[str] | None = set(allowed_tools) if allowed_tools else None
         # 近期调用日志（内存环形缓冲，管理面 /services/{name}/calls 查看）
@@ -124,16 +217,36 @@ class McpServiceApp:
 
     async def _on_list_tools(self, ctx: Any, params: Any) -> ListToolsResult:
         exposed = [t for t in self.tools if self._allowed is None or t.name in self._allowed]
+        # 顺序确定（只读优先 + 名字升序）：一是让 agent 优先看到安全工具，
+        # 二是规范明确要求确定性顺序以提升 prompt cache 命中率。
+        exposed.sort(key=lambda t: (not (t.annotations or {}).get("readOnlyHint"), t.name))
+
+        total = len(exposed)
+        shown = exposed
+        truncated = 0
+        if self._advertise_limit and total > self._advertise_limit:
+            keep = max(self._advertise_limit - 1, 1)
+            shown = exposed[:keep]
+            truncated = total - len(shown)
+
+        tools_out = [
+            Tool(
+                name=t.name,
+                description=t.description,
+                input_schema=t.input_schema,
+                annotations=_tool_annotations(t),
+            )
+            for t in shown
+        ]
+        # 工具多（或已截断）时，先给一个检索入口，而不是让 agent 在几十个工具里硬找
+        if truncated or total >= SEARCH_TOOL_MIN_TOOLS:
+            tools_out.insert(
+                0, _search_tool_for(self._search_tool, total=total, truncated=truncated)
+            )
         return ListToolsResult(
-            tools=[
-                Tool(
-                    name=t.name,
-                    description=t.description,
-                    input_schema=t.input_schema,
-                    annotations=_tool_annotations(t),
-                )
-                for t in exposed
-            ]
+            tools=tools_out,
+            ttl_ms=TOOLS_LIST_TTL_MS,
+            cache_scope="public",  # 列表只取决于服务配置，不因调用者而异
         )
 
     async def _on_call_tool(self, ctx: Any, params: CallToolRequestParams) -> CallToolResult:
@@ -143,6 +256,8 @@ class McpServiceApp:
         return result
 
     async def _do_call_tool(self, params: CallToolRequestParams) -> CallToolResult:
+        if params.name == self._search_tool_name:
+            return self._do_search(params.arguments or {})
         tool = self._tool_map.get(params.name)
         if tool is None:
             return self._error_result(
@@ -223,6 +338,35 @@ class McpServiceApp:
             else json.dumps(result.payload, ensure_ascii=False, default=str)
         )
         return CallToolResult(content=[TextContent(type="text", text=text)])
+
+    def _do_search(self, arguments: dict[str, Any]) -> CallToolResult:
+        """search_tools 的实现：纯本地检索，不访问上游任何东西。"""
+        query = arguments.get("query")
+        if not isinstance(query, str) or not query.strip():
+            return self._error_result(
+                "search_tools 需要非空的 query 参数",
+                code=-32602,
+                tool=self._search_tool_name,
+                hint='传 {"query": "用自然语言描述你要做的事"}，不要传空字符串。',
+            )
+        limit = arguments.get("limit", 8)
+        if not isinstance(limit, int) or isinstance(limit, bool):
+            limit = 8
+        limit = max(1, min(50, limit))
+
+        hits = self._index.search(query, limit=limit)
+        if not hits:
+            return self._error_result(
+                f"没有匹配 “{query}” 的工具",
+                code=-32602,
+                tool=self._search_tool_name,
+                hint="换个说法或用英文关键词重试；也可用英文的动作词（如 list/get/create）而非业务名词。",
+            )
+        lines = [f"匹配 {len(hits)} 个工具（本服务共 {len(self._index)} 个）："]
+        for name, score, summary in hits:
+            lines.append(f"- {name}  ({score:.1f})  {summary}")
+        lines.append("确定工具名后直接用 tools/call 调用，无需再次检索。")
+        return CallToolResult(content=[TextContent(type="text", text="\n".join(lines))])
 
     _STATUS_BY_CODE = {
         -32601: "unknown_tool",
