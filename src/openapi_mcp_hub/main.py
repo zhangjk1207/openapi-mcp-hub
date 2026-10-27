@@ -6,6 +6,7 @@ agent 侧 URL 不变。
 
 from __future__ import annotations
 
+import argparse
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -51,6 +52,10 @@ def create_app(cfg: GatewayConfig | None = None) -> FastAPI:
         version=__version__,
         description="OpenAPI → MCP 网关：POST /services 注册 spec，即刻生成 /mcp/{name} 端点",
         lifespan=lifespan,
+        # 默认不暴露管理面 schema（见 GatewayConfig.docs_enabled）
+        docs_url="/docs" if cfg.docs_enabled else None,
+        redoc_url=None,
+        openapi_url="/openapi.json" if cfg.docs_enabled else None,
     )
     app.state.config = cfg
     app.state.registry = registry
@@ -112,12 +117,114 @@ def create_app(cfg: GatewayConfig | None = None) -> FastAPI:
     return app
 
 
-def main() -> None:  # console_script 入口：openapi-mcp-hub
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="openapi-mcp-hub",
+        description=(
+            "把 OpenAPI spec 或 PostgreSQL/MySQL 数据库变成 MCP 端点。"
+            "所有参数均可选用；不传则读环境变量 OPENAPI_MCP_HUB_*（见 README）。"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "示例：\n"
+            "  openapi-mcp-hub --port 8080 --data-dir ./data\n"
+            "  OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx openapi-mcp-hub --print-config\n"
+        ),
+    )
+    p.add_argument("--version", action="store_true", help="打印版本号后退出")
+    p.add_argument("--host", help="监听地址（默认 0.0.0.0，环境变量 OPENAPI_MCP_HUB_HOST）")
+    p.add_argument("--port", type=int, help="监听端口（默认 20033，环境变量 OPENAPI_MCP_HUB_PORT）")
+    p.add_argument(
+        "--data-dir",
+        help="文件后端目录（默认 ./data，环境变量 OPENAPI_MCP_HUB_DATA_DIR）",
+    )
+    p.add_argument(
+        "--database-url",
+        help="PostgreSQL DSN；不传则用文件后端（环境变量 OPENAPI_MCP_HUB_DATABASE_URL）",
+    )
+    p.add_argument(
+        "--host-allowlist",
+        help="目标主机白名单，逗号分隔（SSRF 防护，环境变量 OPENAPI_MCP_HUB_HOST_ALLOWLIST）",
+    )
+    p.add_argument(
+        "--docs",
+        action="store_true",
+        help="打开 /docs 与 /openapi.json（默认关闭）",
+    )
+    p.add_argument(
+        "--log-level",
+        default="info",
+        choices=["critical", "error", "warning", "info", "debug", "trace"],
+        help="uvicorn 日志级别（默认 info）",
+    )
+    p.add_argument(
+        "--print-config",
+        action="store_true",
+        help="打印生效配置（凭证脱敏）后退出，用于排查启动问题",
+    )
+    return p
+
+
+def _apply_cli_overrides(cfg: GatewayConfig, args: argparse.Namespace) -> GatewayConfig:
+    """CLI 优先级高于环境变量（显式传参才覆盖）。"""
+    if args.host:
+        cfg.host = args.host
+    if args.port is not None:
+        cfg.port = args.port
+    if args.data_dir:
+        cfg.data_dir = Path(args.data_dir)
+    if args.database_url:
+        cfg.database_url = args.database_url
+    if args.host_allowlist is not None:
+        cfg.host_allowlist = [x.strip() for x in args.host_allowlist.split(",") if x.strip()]
+    if args.docs:
+        cfg.docs_enabled = True
+    return cfg
+
+
+def _describe_config(cfg: GatewayConfig) -> str:
+    """生效配置概览；凭证只报是否已配置，绝不回显值。"""
+    lines = [
+        f"admin_token      : {'已配置' if cfg.admin_token else '未配置（管理面不可用）'}",
+        f"listen           : {cfg.host}:{cfg.port}",
+        f"data_dir         : {cfg.data_dir.resolve()}",
+        f"store            : {cfg.database_url and 'PostgreSQL' or 'file'}",
+        f"host_allowlist   : {', '.join(cfg.host_allowlist) or '不限制（内网默认）'}",
+        f"docs             : {'on' if cfg.docs_enabled else 'off'}",
+        f"max_tools/service: {cfg.default_max_tools}",
+    ]
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> None:  # console_script 入口：openapi-mcp-hub
+    import sys
+
     import uvicorn
 
-    logging.basicConfig(level=logging.INFO)
-    cfg = GatewayConfig.from_env()
-    uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port, log_level="info")
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    if args.version:
+        print(f"openapi-mcp-hub {__version__}")
+        return
+
+    logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
+    cfg = _apply_cli_overrides(GatewayConfig.from_env(), args)
+
+    if args.print_config:
+        print(_describe_config(cfg))
+        return
+
+    if not cfg.admin_token:
+        print(
+            "警告：未设置 OPENAPI_MCP_HUB_ADMIN_TOKEN，管理面（注册/注销/轮换 key）不可用，"
+            "只能通过环境变量 OPENAPI_MCP_HUB_DEMO=1 或预置 data/services/*.json 使用。",
+            file=sys.stderr,
+        )
+
+    uvicorn.run(
+        create_app(cfg), host=cfg.host, port=cfg.port, log_level=args.log_level
+    )
 
 
 app = create_app()

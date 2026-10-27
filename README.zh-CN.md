@@ -8,7 +8,7 @@ OpenAPI → MCP 网关。起一个服务（比如 `localhost:20033`），POST �
 
 网关根路径带一个控制台，单文件静态页，没有构建链和外部资源。能表单注册（带预检）、看服务列表和详情、健康探测、调用日志、轮换 key。内网环境直接用。
 
-> 当前版本 v0.4.1，178 项测试通过。怎么用看 [USAGE.md](USAGE.md)，英文文档 [README.md](README.md)。
+> 当前版本 v0.5.0，247 项测试通过。怎么用看 [USAGE.md](USAGE.md)，英文文档 [README.md](README.md)。
 
 ![demo](docs/demo.gif)
 
@@ -115,6 +115,81 @@ claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
 
 演示模式（compose 里的 `OPENAPI_MCP_HUB_DEMO=1`）用固定公开的演示 key，只是为了省事。正式使用前关掉演示模式、改掉 `OPENAPI_MCP_HUB_ADMIN_TOKEN`——真实注册返回的永远是一次性随机 key。
 
+### 安装
+
+```bash
+pip install openapi-mcp-hub        # 或：uvx openapi-mcp-hub
+openapi-mcp-hub --version
+
+# 容器（多架构 amd64 / arm64）
+docker run -d --name openapi-mcp-hub -p 20033:20033 \
+  -e OPENAPI_MCP_HUB_ADMIN_TOKEN=换成你的token \
+  -v "$PWD/data:/app/data" \
+  ghcr.io/zhangjk1207/openapi-mcp-hub:latest
+```
+
+命令行参数**全部可选**，不传任何参数时行为与以前完全一致（纯读 `OPENAPI_MCP_HUB_*` 环境变量）；传入则覆盖环境变量。
+
+| 参数 | 对应环境变量 | 默认值 |
+|---|---|---|
+| `--host` | `OPENAPI_MCP_HUB_HOST` | `0.0.0.0` |
+| `--port` | `OPENAPI_MCP_HUB_PORT` | `20033` |
+| `--data-dir` | `OPENAPI_MCP_HUB_DATA_DIR` | `./data` |
+| `--database-url` | `OPENAPI_MCP_HUB_DATABASE_URL` | 文件后端 |
+| `--host-allowlist` | `OPENAPI_MCP_HUB_HOST_ALLOWLIST` | 不限制 |
+| `--docs` | `OPENAPI_MCP_HUB_DOCS=1` | 关闭 |
+| `--log-level` | — | `info` |
+| `--print-config` | — | 打印生效配置（凭证脱敏）后退出 |
+
+“为什么起不来”绝大多数是配置问题，所以有了这个：
+
+```bash
+$ OPENAPI_MCP_HUB_ADMIN_TOKEN=x openapi-mcp-hub --print-config --port 8080
+admin_token      : 已配置
+listen           : 0.0.0.0:8080
+data_dir         : /app/data
+store            : file
+host_allowlist   : 不限制（内网默认）
+docs             : off
+max_tools/service: 100
+```
+
+管理面的 `/docs` 与 `/openapi.json` **默认关闭**（控制台已覆盖全部操作，没必要对外暴露 schema）；需要时加 `--docs` 或 `OPENAPI_MCP_HUB_DOCS=1`。
+
+### 接入各类 agent 客户端
+
+端点固定：`http://<host>:20033/mcp/<服务名>`，鉴权用该服务的 `X-Api-Key`（jwt 模式下改用 `Authorization: Bearer <token>`）。下面是各客户端的落点（字段名以客户端自身文档为准）：
+
+| 客户端 | 落点 |
+|---|---|
+| **Claude Code** | `claude mcp add --transport http petstore <url> --header 'X-Api-Key: psk-…'` |
+| **Claude Desktop** | `claude_desktop_config.json` → `mcpServers`（旧版本需 `mcp-remote` 桥） |
+| **Cursor** | `~/.cursor/mcp.json` → `mcpServers` |
+| **Cline / Roo** | MCP 设置 → `mcpServers`（远程服务器：URL + headers） |
+| **VS Code（Copilot agent）** | `.vscode/mcp.json` → **`servers`** 键，带 `"type": "http"` |
+| **Dify** | 工具 → MCP 服务器：填端点 URL + `X-Api-Key` 头 |
+| **Open WebUI** | 设置 → 工具 → 添加 MCP 服务器（URL + header） |
+| **其他** | 任意 MCP SDK 的 `streamable_http` 客户端，或下面的 SSE 兼容端点 |
+
+通用的 JSON 形式（`mcpServers` 系的客户端直接可用）：
+
+```json
+{
+  "mcpServers": {
+    "petstore": {
+      "url": "http://localhost:20033/mcp/petstore",
+      "headers": { "X-Api-Key": "psk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+    }
+  }
+}
+```
+
+只支持 SSE 的老客户端（工具与 key 完全相同）：
+
+```
+GET http://localhost:20033/mcp/<服务名>/sse
+```
+
 ### 常驻部署（无 Docker）
 
 ```bash
@@ -197,6 +272,44 @@ OPENAPI_MCP_HUB_ADMIN_TOKEN=xxx docker compose up -d
 | 注册 REST API | 注册数据库（只读） |
 |---|---|
 | ![注册 REST API](docs/screenshots/console-register-rest.png) | ![注册数据库](docs/screenshots/console-register-db.png) |
+
+### 面向 agent 的工具质量
+
+tools/list 会整个进入模型上下文，所以“工具怎么描述、怎么标注”直接决定 agent 能不能用对。这一块做了三件事，全部零配置：
+
+**① 安全标注（MCP ToolAnnotations）**：根据 HTTP 方法与动词自动推断，控制台工具列表里直接显示徽标。
+
+| 方法/动作 | 只读 | 破坏性 | 幂等 |
+|---|---|---|---|
+| `GET` / `HEAD` | ✅ | — | ✅ |
+| `DELETE` / `PUT` / `PATCH` | — | ✅ | DELETE/PUT 幂等 |
+| `POST` + `create_*` 类 | — | — | — |
+| `POST` 语义不明或含 delete/drop/reset… | — | ✅ | — |
+| 数据库三件套 | ✅（执行层 READ ONLY 事务兜底） | — | ✅ |
+
+原则是**保守优先**：MCP 规范里 `destructiveHint` 默认就是 true，所以只在有把握时才降级；拿不准的 POST 一律按破坏性处理。这样 agent 可以直接跑只读工具，遇到改数据的会先问一句。
+
+**② 描述与 schema 体积压缩**：剥 HTML/Markdown 装饰、折叠空白、丢 `title`/`$comment` 这类纯展示键、超长文本按句子边界截断（工具描述 ≤320 字符、字段说明 ≤160），并显式标上省略号。
+
+实测（40 个接口 × 3 方法的合成 spec）：
+
+| 文档风格 | 压缩前 | 压缩后 | 节省 |
+|---|---|---|---|
+| 典型企业文档 | 52,150 字（434/工具） | 46,560 字（388/工具） | 10.7% |
+| Javadoc 式超长文档 | 284,250 字（2,368/工具） | 71,320 字（594/工具） | **74.9%** |
+
+只做不改变语义的裁剪：`required` / `enum` / `format` / `default` 一律原样保留，不会因此让 agent 传错参。
+
+**③ 可自纠正的错误信息**：错误载荷统一带 `data.hint`，告诉 agent 下一步该改什么、以及重试到底有没有用。
+
+| 场景 | hint 语义 |
+|---|---|
+| 入参校验失败 | 列出本工具合法参数名与必填项，并明确“不要自造字段名” |
+| `401` / `403` / 凭证缺失 | 服务端配置问题，**重试不会成功** |
+| `404` / `405` | 参数或工具选错，不要原样重发 |
+| `409` | 先查当前状态再决定 |
+| `422` | 按错误信息里的字段名修正 |
+| `429` / `5xx` / 超时 | 退避后重试；连续失败说明上游异常 |
 
 ## 4. 关键决策（已定）
 
@@ -403,6 +516,8 @@ openapi-mcp-hub/
 │   ├── models.py               # 中间模型：ApiEndpoint / ApiParam / DataPlaneAuthn …
 │   ├── extractor.py            # 接口提取
 │   ├── generator.py            # ApiEndpoint → MCP Tool
+│   ├── annotations.py          # 按 HTTP 语义推断 MCP 工具标注（只读/破坏性/幂等）
+│   ├── compact.py              # 工具描述与 schema 的体积压缩（零依赖、零配置）
 │   ├── invoker.py              # per-service httpx + 超时 + 错误映射 + oauth2 token
 │   ├── db.py                   # 数据库注册源：内省 + 只读执行器
 │   ├── store.py                # 落盘后端：文件 / PostgreSQL
@@ -445,10 +560,13 @@ openapi-mcp-hub/
 | M5-1 | 数据库 → MCP：PostgreSQL / MySQL 8，六层强制只读 | ✅ 三件套工具上线；M5-2 per_table 与 M5-3 写模式评审后搁置 |
 | v0.3.0 | oauth2 client_credentials 目标认证、refresh 热更新、调用统计、控制台 auth 表单修复 | ✅ 163 项测试通过 |
 | v0.4.0 | JWT 数据面认证（OAuth 2.1 resource server）、tool poisoning 漂移 diff | ✅ 177 项测试通过 |
+| v0.5.0 | 面向 agent 的工具质量：安全标注、描述/schema 压缩、可自纠正错误提示、CLI 参数、多架构镜像 | ✅ 247 项测试通过 |
 
-往后：官方 MCP registry 发布、工具语义搜索/路由、控制台的 jwt 配置界面、Prometheus 指标。
+往后：官方 MCP registry 发布、工具语义搜索/路由（工具很多时让 agent 只看到需要的那几个）、控制台的 jwt 配置界面。
 
-**目前尚未实现**（不要按这些做规划）：熔断、per-service 并发限流 / 配额、HA 与多副本协同、Prometheus 指标、数据库写操作、per_table 表级工具、api_key 过期。当前的隔离手段是「每服务独立 httpx client + 独立超时 + 连接池上限 + SSRF allowlist」，全部在单进程内。
+**目前尚未实现**（不要按这些做规划）：熔断、per-service 并发限流 / 配额、HA 与多副本协同、Prometheus 指标、数据库写操作、per_table 表级工具、api_key 过期。
+
+**刻意永久不做**：任何把网关变成“平台”的东西——RBAC/SSO、多副本协调、指标全家桶、审计库。它们都在拿默认路径的轻量去换前置反代已经解决的问题。当前的隔离手段是「每服务独立 httpx client + 独立超时 + 连接池上限 + SSRF allowlist」，全部在单进程内。
 
 ## 11. 贡献与联系
 

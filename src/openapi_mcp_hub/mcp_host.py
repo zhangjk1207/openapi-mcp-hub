@@ -32,9 +32,11 @@ from mcp.types import (
     ListToolsResult,
     TextContent,
     Tool,
+    ToolAnnotations,
 )
 
 from . import __version__
+from .annotations import annotations_to_dict
 from .invoker import Invoker
 from .db import DbExecutor
 from .jwt_auth import JwtAuthnError, verify_token, www_authenticate_header
@@ -42,6 +44,33 @@ from .models import DataPlaneAuthn, ToolDef
 from .templates import render_response
 
 logger = logging.getLogger(__name__)
+
+
+def _tool_annotations(tool: ToolDef) -> ToolAnnotations | None:
+    """把 ToolDef.annotations（snake/kwargs 字典）转成 SDK 的 ToolAnnotations。"""
+    if not tool.annotations:
+        return None
+    return ToolAnnotations(**annotations_to_dict(tool.annotations))
+
+
+def _schema_hint(tool: ToolDef) -> str | None:
+    """入参校验失败时，给出 agent 能直接改正的提示（零配置）。
+
+    LLM 看到“Input validation error: 'limit' is not of type 'integer'”以后往往
+    会换个字段再试或重复同样错误；把本工具的合法字段名与必填项直接列出来，
+    它可以一次改对。
+    """
+    schema = tool.input_schema or {}
+    props = schema.get("properties") or {}
+    required = schema.get("required") or []
+    if not props:
+        return "该工具不接受任何参数，请传空对象 {}。"
+    names = ", ".join(sorted(props)[:40])
+    parts = [f"可用参数：{names}。"]
+    if required:
+        parts.append(f"必填：{', '.join(required)}。")
+    parts.append("只传 inputSchema 中声明的字段，不要自造字段名。")
+    return "".join(parts)
 
 
 class McpServiceApp:
@@ -97,7 +126,12 @@ class McpServiceApp:
         exposed = [t for t in self.tools if self._allowed is None or t.name in self._allowed]
         return ListToolsResult(
             tools=[
-                Tool(name=t.name, description=t.description, input_schema=t.input_schema)
+                Tool(
+                    name=t.name,
+                    description=t.description,
+                    input_schema=t.input_schema,
+                    annotations=_tool_annotations(t),
+                )
                 for t in exposed
             ]
         )
@@ -115,12 +149,14 @@ class McpServiceApp:
                 f"未知工具: {params.name}（服务可能刚更新，请重新获取工具列表）",
                 code=-32601,
                 tool=params.name,
+                hint="重新调用 tools/list 获取当前可用工具名，不要凭记忆推断工具名。",
             )
         if self._allowed is not None and tool.name not in self._allowed:
             return self._error_result(
                 f"工具 {tool.name} 不在 allowed_tools 白名单内（联系服务管理员调整）",
                 code=-32601,
                 tool=tool.name,
+                hint="这是服务端配置限制，重试不会成功；请改用允许的工具或联系管理员。",
             )
 
         arguments = params.arguments or {}
@@ -129,7 +165,10 @@ class McpServiceApp:
             jsonschema.validate(instance=arguments, schema=tool.input_schema)
         except jsonschema.ValidationError as exc:
             return self._error_result(
-                f"Input validation error: {exc.message}", code=-32602, tool=tool.name
+                f"Input validation error: {exc.message}",
+                code=-32602,
+                tool=tool.name,
+                hint=_schema_hint(tool),
             )
         except jsonschema.SchemaError as exc:
             logger.warning("工具 %s 的 inputSchema 非法，跳过校验: %s", params.name, exc)
@@ -160,6 +199,7 @@ class McpServiceApp:
                 code=result.error_code or -32000,
                 status_code=result.status_code,
                 tool=tool.name,
+                hint=result.hint,
             )
 
         # 响应模板：把原始响应裁剪成 LLM 友好文本；渲染异常则回退 passthrough
@@ -221,6 +261,7 @@ class McpServiceApp:
         code: int = -32603,
         status_code: int | None = None,
         tool: str | None = None,
+        hint: str | None = None,
     ) -> CallToolResult:
         """结构化错误载荷（对齐 JSON-RPC 错误对象：两层错误模型）。
 
@@ -237,6 +278,8 @@ class McpServiceApp:
             data["http_status"] = status_code
         if tool is not None:
             data["tool"] = tool
+        if hint:
+            data["hint"] = hint
         if self.name:
             data["service"] = self.name
         payload = {"error": {"code": code, "message": message, "data": data}}

@@ -25,6 +25,42 @@ from .models import AuthConfig, ParamLocation, ToolDef
 SUCCESS_TRUNCATE_BYTES = 64 * 1024
 ERROR_BODY_EXCERPT_BYTES = 4 * 1024
 
+# 凭证类错误（-32001）统一提示：属于服务端配置问题，agent 重试无意义。
+_CRED_HINT = (
+    "凭证由服务管理员通过环境变量配置，属于服务端问题："
+    "重试不会成功，请改用其它工具或向管理员反馈。"
+)
+
+# 按上游状态码给出的可自纠正提示。原则：明确告诉 agent「改参数」还是
+# 「等一等再试」还是「重试无效，去找人」。含糊的“调用失败”会让 agent 反复盲试。
+_STATUS_HINTS: dict[int, str] = {
+    400: "请求体或参数不合法。按 inputSchema 逐字段核对类型与必填项后重试，不要原样重发。",
+    401: "目标 API 拒绝了凭证。这是服务端配置问题（环境变量未配或已失效），重试不会成功。",
+    403: "凭证有效但无权限访问该资源。换个允许的资源，或联系服务管理员，重试无效。",
+    404: "路径或资源不存在。检查 id 类参数取值是否正确、资源是否已被删除；重试无效。",
+    405: "该接口不允许此 HTTP 方法。确认选错了工具（可能是相邻的另一个工具）。",
+    409: "资源当前状态与请求冲突。先用只读工具查询当前状态，再决定是否重试。",
+    413: "请求体过大。减小 body 体积或改用分页/分批提交。",
+    415: "请求体媒体类型不受支持。检查 body 的结构与 Content-Type。",
+    422: "字段语义校验失败（类型对但值不合法，如枚举/格式/范围）。按错误信息里的字段名修正。",
+    429: "上游限流。等待后重试，并降低调用频率。",
+    500: "上游服务端错误。可稍后重试一次；连续失败说明上游自身异常，不要继续重试。",
+    502: "上游网关错误。可稍后重试一次。",
+    503: "上游不可用（可能正在重启）。等待后重试。",
+    504: "上游超时。减小 limit/分页大小或稍后重试。",
+}
+
+
+def status_hint(status_code: int) -> str:
+    """根据 HTTP 状态码给出建议；未列出的大类给保守结论。"""
+    if status_code in _STATUS_HINTS:
+        return _STATUS_HINTS[status_code]
+    if 400 <= status_code < 500:
+        return "目标 API 拒绝了本次请求。按错误摘要修正参数后重试，不要原样重发。"
+    if status_code >= 500:
+        return "上游服务端错误。可稍后重试一次；连续失败请检查上游健康。"
+    return "目标 API 返回了非预期的状态码，详见错误摘要。"
+
 
 @dataclass
 class InvokeResult:
@@ -35,6 +71,8 @@ class InvokeResult:
     # 错误分类码（JSON-RPC 服务器自定义区间）：
     # -32000 目标 API 非 2xx / -32001 凭证缺失 / -32002 网络或超时 / -32602 参数缺失
     error_code: int | None = None
+    # 给 LLM 的下一步建议（可自纠正）：写明「改什么」或「重试是否有用」
+    hint: str | None = None
 
 
 class ServiceHttpConfig:
@@ -214,7 +252,10 @@ class Invoker:
         params: dict[str, Any] = {}
         auth_error = apply_auth(self.cfg.auth, headers, params)
         if auth_error:
-            return InvokeResult(ok=False, error=auth_error, error_code=-32001)
+            return InvokeResult(
+                ok=False, error=auth_error, error_code=-32001,
+                hint=_CRED_HINT,
+            )
 
         # 参数按位置分流
         path_params: list[str] = []
@@ -239,7 +280,10 @@ class Invoker:
             path = render_path(ep.path, arguments, path_params)
         except KeyError as exc:
             return InvokeResult(
-                ok=False, error=f"缺少路径参数 {exc.args[0]}", error_code=-32602
+                ok=False,
+                error=f"缺少路径参数 {exc.args[0]}",
+                error_code=-32602,
+                hint="path 参数是 URL 的一部分，必须提供具体值，不能留空或用占位符。",
             )
 
         body = arguments.get("body")
@@ -264,7 +308,9 @@ class Invoker:
         if oauth2:
             token, token_err = await self._oauth2_token()
             if token_err:
-                return InvokeResult(ok=False, error=token_err, error_code=-32001)
+                return InvokeResult(
+                    ok=False, error=token_err, error_code=-32001, hint=_CRED_HINT
+                )
             headers["Authorization"] = f"Bearer {token}"
 
         # oauth2 额外给一次 401 重试：token 在边界过期/被吊销时强制刷新后重发；
@@ -286,17 +332,25 @@ class Invoker:
                     ok=False,
                     error=f"目标 API 超时（>{self.cfg.timeout_s}s）: {url}",
                     error_code=-32002,
+                    hint=(
+                        "超时。减小分页/limit 参数、缩小时间范围或简化查询后重试；"
+                        "若反复超时请联系服务管理员检查上游响应时间。"
+                    ),
                 )
             except httpx.HTTPError as exc:
                 return InvokeResult(
                     ok=False,
                     error=f"网络错误: {exc.__class__.__name__}: {exc}",
                     error_code=-32002,
+                    hint="网关到目标 API 网络不通。检查 base_url 与网络策略；重试通常无效。",
                 )
             if resp.status_code == 401 and oauth2 and attempt == 0:
                 token, token_err = await self._oauth2_token(force=True)
                 if token_err:
-                    return InvokeResult(ok=False, error=token_err, error_code=-32001)
+                    return InvokeResult(
+                        ok=False, error=token_err, error_code=-32001,
+                        hint=_CRED_HINT,
+                    )
                 headers["Authorization"] = f"Bearer {token}"
                 continue
             break
@@ -322,4 +376,5 @@ class Invoker:
             status_code=resp.status_code,
             error=f"目标 API 返回 HTTP {resp.status_code}" + (f": {excerpt}" if excerpt else ""),
             error_code=-32000,
+            hint=status_hint(resp.status_code),
         )

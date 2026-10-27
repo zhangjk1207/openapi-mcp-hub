@@ -46,6 +46,42 @@ Public 2026 MCP ecosystem reports keep finding the same pain: only ~8.5% of MCP 
                                              per-service api_key
 ```
 
+## Install
+
+```bash
+pip install openapi-mcp-hub      # or: uvx openapi-mcp-hub
+openapi-mcp-hub --version
+```
+
+Container (multi-arch: amd64 / arm64):
+
+```bash
+docker run -d --name openapi-mcp-hub -p 20033:20033 \
+  -e OPENAPI_MCP_HUB_ADMIN_TOKEN=change-me \
+  -v "$PWD/data:/app/data" \
+  ghcr.io/zhangjk1207/openapi-mcp-hub:latest
+```
+
+### CLI
+
+Every flag is optional — with no arguments the gateway reads `OPENAPI_MCP_HUB_*` environment
+variables exactly as before. CLI wins over env.
+
+| Flag | Same env var | Default |
+|---|---|---|
+| `--host` | `OPENAPI_MCP_HUB_HOST` | `0.0.0.0` |
+| `--port` | `OPENAPI_MCP_HUB_PORT` | `20033` |
+| `--data-dir` | `OPENAPI_MCP_HUB_DATA_DIR` | `./data` |
+| `--database-url` | `OPENAPI_MCP_HUB_DATABASE_URL` | file backend |
+| `--host-allowlist` | `OPENAPI_MCP_HUB_HOST_ALLOWLIST` | unrestricted |
+| `--docs` | `OPENAPI_MCP_HUB_DOCS=1` | off |
+| `--log-level` | — | `info` |
+| `--print-config` | — | print effective config (secrets masked) and exit |
+
+`--print-config` exists because "why won't it start" is almost always a config question. It
+prints the effective config with credentials masked (never the value itself) and exits without
+starting the server. CLI help and log messages are in Chinese; flag names and env vars are stable.
+
 ## Quickstart — 60 seconds
 
 ```bash
@@ -93,6 +129,55 @@ claude mcp add --transport http my-api http://localhost:20033/mcp/my-api \
 
 That's it — your API's operations are now agent-callable tools.
 
+## Connect your agent
+
+Any MCP client that speaks Streamable HTTP works. The endpoint is `http://<host>:20033/mcp/<service>`
+and it authenticates with the per-service key in an `X-Api-Key` header (or a JWT `Authorization:
+Bearer` when the service runs in OAuth 2.1 resource-server mode).
+
+The JSON shape below is the de-facto common one — clients that use `mcpServers` accept it verbatim:
+
+```json
+{
+  "mcpServers": {
+    "petstore": {
+      "url": "http://localhost:20033/mcp/petstore",
+      "headers": { "X-Api-Key": "psk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+    }
+  }
+}
+```
+
+| Client | Where it goes |
+|---|---|
+| **Claude Code** | `claude mcp add --transport http petstore <url> --header 'X-Api-Key: psk-…'` |
+| **Claude Desktop** | `claude_desktop_config.json` → `mcpServers` (needs a version with remote-HTTP support; older builds go through the `mcp-remote` bridge) |
+| **Cursor** | `~/.cursor/mcp.json` → `mcpServers` |
+| **Cline / Roo** | MCP settings → `mcpServers` (remote server: URL + headers) |
+| **VS Code (Copilot agent mode)** | `.vscode/mcp.json` → **`servers`** key, with `"type": "http"` |
+| **Dify** | Tools → MCP server: endpoint URL + `X-Api-Key` header |
+| **Open WebUI** | Settings → Tools → add MCP server (URL + header) |
+| **Anything else** | Any MCP SDK `streamable_http` client, or the legacy SSE endpoint below |
+
+> Field names drift between client versions — where a client differs (VS Code uses `servers`,
+> not `mcpServers`), that client's own docs are authoritative. The gateway side never changes:
+> one URL, one header.
+
+Legacy SSE clients (older than Streamable HTTP) use the compatibility endpoint with the same key:
+
+```
+GET http://localhost:20033/mcp/<service>/sse
+```
+
+Verify from the shell without any client:
+
+```bash
+curl -s -X POST http://localhost:20033/mcp/petstore \
+  -H "X-Api-Key: psk-…" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jq '.result.tools[].name'
+```
+
 ## Register a database instead of an API
 
 No REST spec needed. Point the gateway at a database (via an **environment variable name** — the DSN itself never touches disk):
@@ -133,6 +218,8 @@ Credentials are referenced **by env var name only** — nothing sensitive is per
 | **Filtering** | Path include/exclude globs, tool whitelist, `max_tools` cap, response templates |
 | **Persistence** | JSON file or PostgreSQL backend, automatic one-way migration |
 | **Console** | Single-file admin UI, zero build chain, zero external assets — works in air-gapped intranets |
+| **Agent-facing tooling** | `readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint` inferred per tool, so agents can auto-run reads and ask before deletes; tool descriptions compacted to ≤320 chars and schema descriptions to ≤160 (measured 11%–75% smaller `tools/list` on verbose specs) |
+| **Actionable errors** | Every failure carries a machine-readable `data.hint` telling the agent what to change or whether retrying is pointless (`401` → "server-side, retrying will not help", `422` → "fix the field named in the message", validation → lists legal parameter names) |
 | **Observability** | Health probes, in-memory ring call log (last 20/service), call stats (ok-rate / p50 / p95 / top tools), structured error codes (`-32000`/-`32602`/-`32002`) |
 
 ## Comparison
@@ -195,6 +282,7 @@ assets, works air-gapped.
 
 ## Roadmap
 
+- [x] v0.5.0 — **agent-facing tool quality** · tool annotations (`readOnlyHint`/`destructiveHint`) · description/schema compaction · actionable error hints · CLI flags · multi-arch ghcr image
 - [x] v0.4.0 — **JWT data-plane auth (OAuth 2.1 resource server, RFC 9728)** · tool-poisoning drift diff on update/refresh
 - [x] v0.3.0 — OAuth2 client_credentials target auth · spec refresh endpoint · call stats · console auth fix
 - [x] M5-1 — Database → MCP (PostgreSQL + MySQL 8, six-layer read-only)
@@ -203,6 +291,10 @@ assets, works air-gapped.
 - [ ] Metrics endpoint (Prometheus) & key expiry
 - [ ] Per-tenant quotas / rate limiting
 - [ ] Per-service circuit breaking
+
+Deliberately **not** on this list: anything that turns the gateway into a platform
+(RBAC/SSO, multi-replica coordination, metric stacks, audit stores). Each of those makes
+the default path heavier for a problem the reverse proxy in front of you already solves.
 
 **Not implemented today** — do not plan around these: circuit breaking, per-tenant
 rate limiting or quotas, HA / multi-replica coordination, Prometheus metrics,
@@ -214,7 +306,7 @@ SSRF allowlist, all inside a single process.
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -q          # 178 pass; 22 opt-in integration tests skip without PG/MySQL DSNs
+pytest tests/ -q          # 247 pass; 22 opt-in integration tests skip without PG/MySQL DSNs
 ```
 
 ## License

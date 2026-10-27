@@ -289,6 +289,15 @@ def build_db_tools(catalog: list[TableMeta], cfg: DbSourceConfig) -> list[ToolDe
     """
     tables_line = "\n".join(_table_summary_line(t) for t in catalog) or "（无匹配表）"
 
+    # DB 三件套均为只读（执行层用 READ ONLY 事务兜底），固定域（单个库）=> 封闭世界。
+    # 显式标注让 agent 可以直接执行而无需人工确认。
+    readonly_annotations = {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+
     list_tools = ToolDef(
         name="list_tables",
         description=(
@@ -297,6 +306,7 @@ def build_db_tools(catalog: list[TableMeta], cfg: DbSourceConfig) -> list[ToolDe
         ),
         input_schema={"type": "object", "properties": {}, "additionalProperties": False},
         db_action="list_tables",
+        annotations=readonly_annotations,
     )
     describe = ToolDef(
         name="describe_table",
@@ -313,6 +323,7 @@ def build_db_tools(catalog: list[TableMeta], cfg: DbSourceConfig) -> list[ToolDe
             "additionalProperties": False,
         },
         db_action="describe_table",
+        annotations=readonly_annotations,
     )
     query = ToolDef(
         name="query",
@@ -334,6 +345,7 @@ def build_db_tools(catalog: list[TableMeta], cfg: DbSourceConfig) -> list[ToolDe
             "additionalProperties": False,
         },
         db_action="query",
+        annotations=readonly_annotations,
     )
     return [list_tools, describe, query]
 

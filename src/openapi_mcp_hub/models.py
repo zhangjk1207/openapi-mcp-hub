@@ -209,6 +209,9 @@ class ToolDef:
     db_action: str | None = None
     # 由 registry 在注册时挂载（服务级默认 + 工具级覆盖），运行时 mcp_host 渲染
     response_template: str | None = None
+    # MCP ToolAnnotations（readOnlyHint / destructiveHint / idempotentHint /
+    # openWorldHint）。由 annotations.infer_annotations 推断。
+    annotations: dict[str, Any] | None = None
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -216,4 +219,5 @@ class ToolDef:
             "description": self.description,
             "inputSchema": self.input_schema,
             "responseTemplate": self.response_template,
+            "annotations": self.annotations,
         }

@@ -30,6 +30,9 @@ class GatewayConfig:
     default_max_tools: int = DEFAULT_MAX_TOOLS
     # PostgreSQL 持久化（可选）：不配则用 data/services/*.json 文件后端
     database_url: str | None = None
+    # /docs 与 /openapi.json：默认关闭。管理面 schema 没必要对外暴露，
+    # 控制台已覆盖全部操作；需要时用 OPENAPI_MCP_HUB_DOCS=1 打开。
+    docs_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> "GatewayConfig":
@@ -40,6 +43,12 @@ class GatewayConfig:
         host = os.environ.get(f"{ENV_PREFIX}_HOST", "0.0.0.0")
         port = int(os.environ.get(f"{ENV_PREFIX}_PORT", "20033"))
         database_url = os.environ.get(f"{ENV_PREFIX}_DATABASE_URL") or None
+        docs_enabled = os.environ.get(f"{ENV_PREFIX}_DOCS", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         return cls(
             admin_token=admin_token,
             data_dir=data_dir,
@@ -47,6 +56,7 @@ class GatewayConfig:
             host=host,
             port=port,
             database_url=database_url,
+            docs_enabled=docs_enabled,
         )
 
     def target_host_allowed(self, url: str) -> bool:

@@ -265,6 +265,12 @@ a.tag-doc:hover{text-decoration:underline}
 .tool:hover{border-left-color:var(--acc)}
 .tool .tn{font-family:var(--mono);font-size:13px;font-weight:550;color:#a5b0fc}
 .tool .tn .req{color:var(--faint);font-weight:400;font-size:12px;margin-left:8px}
+/* 工具安全标注（来自 MCP ToolAnnotations）*/
+.ann{font-size:10.5px;font-weight:500;letter-spacing:.02em;padding:1px 6px;border-radius:999px;
+  margin-left:7px;vertical-align:1px;border:1px solid transparent;white-space:nowrap}
+.ann-ro{color:var(--ok);background:var(--ok-soft);border-color:rgba(52,211,153,.28)}
+.ann-wr{color:var(--warn);background:var(--warn-soft);border-color:rgba(251,191,36,.28)}
+.ann-del{color:var(--err);background:var(--err-soft);border-color:rgba(248,113,113,.3)}
 .tool .td{font-size:12.5px;color:var(--dim);line-height:1.55;max-height:60px;overflow:hidden}
 .tool .td code,.pvbox code,.f-err code{font-family:var(--mono);font-size:.92em;color:#c3cadb;
   background:var(--surface-3);border-radius:4px;padding:1px 5px}
@@ -508,6 +514,13 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 /* 工具描述里的 `code` 片段渲染成 <code>（esc 先行，无注入风险） */
 const mdCode = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+/* 工具安全标注：只读 / 删除 / 写入（来自 MCP ToolAnnotations） */
+function annBadge(a) {
+  if (!a) return "";
+  if (a.readOnlyHint) return '<span class="ann ann-ro" title="readOnlyHint：不修改任何数据，agent 可直接执行">只读</span>';
+  if (a.destructiveHint) return '<span class="ann ann-del" title="destructiveHint：会删除或覆盖数据，建议人工确认">破坏性</span>';
+  return '<span class="ann ann-wr" title="会修改数据（additive 更新），不可重复执行">写入</span>';
+}
 /* 相对时间：显示刚焟/N 分钟前，title 存完整 ISO */
 function fmtRel(iso) {
   if (!iso) return ["—", ""];
@@ -861,7 +874,7 @@ async function openDetail(name) {
       ${info.allowed_tools && info.allowed_tools.length ? `<div class="cell" style="grid-column:1/-1"><div class="kk">白名单</div><div class="vv mono">${esc(info.allowed_tools.join(", "))}</div></div>` : ""}`;
     $("dtToolN").textContent = (info.tools || []).length;
     $("dtTools").innerHTML = (info.tools || []).map(t =>
-      `<div class="tool"><div class="tn">${esc(t.name)}<span class="req">必填：${esc((t.required || []).join(", ") || "无")}</span></div>
+      `<div class="tool"><div class="tn">${esc(t.name)}${annBadge(t.annotations)}<span class="req">必填：${esc((t.required || []).join(", ") || "无")}</span></div>
        <div class="td">${mdCode(t.description || "")}</div></div>`).join("");
     $("dtCalls").innerHTML = calls.count
       ? `<div class="tscroll"><div class="card"><table class="mini"><thead><tr><th>时间</th><th>工具</th><th>状态</th><th>耗时</th><th>说明</th></tr></thead><tbody>${

@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .annotations import infer_annotations
+from .compact import FIELD_DESCRIPTION_LIMIT, compact_description, compact_schema, compact_text
 from .config import DEFAULT_MAX_TOOLS
 from .errors import RegistrationError
 from .models import ApiEndpoint, ParamLocation, ToolDef
@@ -60,6 +62,11 @@ def fallback_tool_name(endpoint: ApiEndpoint) -> str:
 
 
 def build_description(endpoint: ApiEndpoint) -> str:
+    """拼装工具描述，并做无损压缩（详见 compact.py）。
+
+    顺序有意如此：先用原文拼出完整信息，再整体压缩。逐段压缩会让摘要和
+    HTTP 行使不上压缩阈值，反而更容易超限。
+    """
     parts: list[str] = []
     if endpoint.summary:
         parts.append(endpoint.summary.strip())
@@ -68,7 +75,7 @@ def build_description(endpoint: ApiEndpoint) -> str:
     parts.append(f"HTTP {endpoint.method.upper()} {endpoint.path}")
     if endpoint.deprecated:
         parts.append("⚠️ 该接口在 openapi 中已标记 deprecated")
-    return "\n\n".join(p for p in parts if p)
+    return compact_description("\n\n".join(p for p in parts if p))
 
 
 def build_input_schema(endpoint: ApiEndpoint) -> dict[str, Any]:
@@ -80,7 +87,10 @@ def build_input_schema(endpoint: ApiEndpoint) -> dict[str, Any]:
         prop = _clean_schema(param.schema) or {"type": "string"}
         if not isinstance(prop, dict):
             prop = {"type": "string"}
-        desc = param.description or prop.get("description") or f"{param.location.value} 参数 {param.name}"
+        desc = compact_text(
+            param.description or prop.get("description") or f"{param.location.value} 参数 {param.name}",
+            FIELD_DESCRIPTION_LIMIT,
+        )
         prop = {**prop, "description": desc}
         # path 参数在 openapi 语义里恒为必填
         if param.location == ParamLocation.path:
@@ -91,8 +101,11 @@ def build_input_schema(endpoint: ApiEndpoint) -> dict[str, Any]:
                 required.append(param.name)
 
     if endpoint.body is not None:
-        body_schema = _clean_schema(endpoint.body.schema)
-        desc = endpoint.body.description or f"请求体（{endpoint.body.media_type}）"
+        body_schema = compact_schema(_clean_schema(endpoint.body.schema))
+        desc = compact_text(
+            endpoint.body.description or f"请求体（{endpoint.body.media_type}）",
+            FIELD_DESCRIPTION_LIMIT,
+        )
         properties["body"] = {**body_schema, "description": desc} if body_schema else {
             "type": "object",
             "description": desc,
@@ -148,6 +161,10 @@ def generate_tools(
                 description=build_description(ep),
                 input_schema=build_input_schema(ep),
                 endpoint=ep,
+                # 目标域固定为注册时的 base_url => 封闭世界
+                annotations=infer_annotations(
+                    ep.method, name=name, path=ep.path, closed_world=True
+                ),
             )
         )
     return tools, warnings

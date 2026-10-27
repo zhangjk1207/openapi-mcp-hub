@@ -192,6 +192,64 @@ claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
 
 之后 `/mcp` 里能看到工具列表，模型即可调用 `list_pets`、`get_pet_by_id` 等。
 
+### 其他客户端（JSON 配置）
+
+`mcpServers` 系的客户端（Cursor、Cline、Roo、Claude Desktop）直接用这段：
+
+```json
+{
+  "mcpServers": {
+    "petstore": {
+      "url": "http://localhost:20033/mcp/petstore",
+      "headers": { "X-Api-Key": "psk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+    }
+  }
+}
+```
+
+落点：Cursor → `~/.cursor/mcp.json`；Cline/Roo → MCP 设置；Claude Desktop →
+`claude_desktop_config.json`（旧版本需 `mcp-remote` 桥）。
+
+**VS Code（Copilot agent 模式）** 用的是 `servers` 键，不是 `mcpServers`，放在
+`.vscode/mcp.json`：
+
+```json
+{
+  "servers": {
+    "petstore": {
+      "type": "http",
+      "url": "http://localhost:20033/mcp/petstore",
+      "headers": { "X-Api-Key": "psk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+    }
+  }
+}
+```
+
+**Dify**：工具 → MCP 服务器 → 填端点 URL + 自定义头 `X-Api-Key`。
+**Open WebUI**：设置 → 工具 → 添加 MCP 服务器 → 填 URL + header。
+
+> 各客户端的字段名会随版本漂移，以客户端自己的文档为准；网关侧永远只有一个 URL 加一个 header。
+
+### 工具标注：让 agent 知道哪个工具能直接跑
+
+`tools/list` 会带上 MCP 标准的 `annotations`：
+
+```json
+{
+  "name": "delete_pet_by_id",
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}
+```
+
+含义：该工具会改数据且可能不可逆（`destructiveHint`），但重复调用结果一致
+（`idempotentHint`），且只在固定 base_url 内工作（`openWorldHint: false`）。
+支持这套标注的客户端会据此决定“直接执行”还是“先问人”。控制台的服务详情里也有对应徽标。
+
 ### 只支持 SSE 的老客户端
 
 改用兼容端点（同一套工具、同一个 key）：

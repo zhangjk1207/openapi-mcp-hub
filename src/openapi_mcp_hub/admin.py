@@ -126,6 +126,7 @@ def build_admin_router(registry: Registry, cfg: GatewayConfig) -> APIRouter:
                     "description": (t.description or "").split("\n")[0],
                     "required": t.input_schema.get("required", []),
                     "response_template": t.response_template,
+                    "annotations": t.annotations,
                 }
                 for t in svc.tools
             ],

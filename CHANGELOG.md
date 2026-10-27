@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.5.0 (2026-10-26)
+
+Agent-facing tool quality. No breaking changes: every new capability is on by default with
+sane values and zero new required configuration.
+
+### Added
+
+- **MCP tool annotations** — `readOnlyHint` / `destructiveHint` / `idempotentHint` /
+  `openWorldHint` inferred per tool from the HTTP method plus verb heuristics, and shown as
+  badges in the console. Reads become auto-runnable for agents; anything that writes asks
+  first. Conservative by construction (MCP defaults `destructiveHint` to true, so only
+  confident cases are relaxed; ambiguous `POST` stays destructive). DB tools are annotated
+  read-only, matching the `READ ONLY` transaction that backs them.
+- **Description and schema compaction** (`compact.py`) — strips HTML/Markdown decoration,
+  collapses whitespace, drops display-only schema keys (`title`/`$comment`/`$id`/`$schema`),
+  drops boilerplate sentences and truncates at sentence boundaries (tool description ≤320
+  chars, field descriptions ≤160). `required` / `enum` / `format` / `default` are never
+  touched. Measured on a synthetic 120-tool spec: −10.7% for typical docs, −74.9% for
+  Javadoc-style verbose docs.
+- **Actionable error hints** — every `isError` payload now carries `error.data.hint`
+  explaining what to change, or whether retrying is pointless (`401`/`403` → server-side;
+  `422` → fix the named field; validation errors list the tool's legal parameter names;
+  `429`/`5xx` → back off and retry once).
+- **CLI flags** — `--host`, `--port`, `--data-dir`, `--database-url`, `--host-allowlist`,
+  `--docs`, `--log-level`, `--print-config`, `--version`. All optional; no arguments keeps
+  the previous env-only behavior. CLI wins over env.
+- **Multi-arch container images** on `ghcr.io/zhangjk1207/openapi-mcp-hub` (amd64 + arm64),
+  built and smoke-tested on every release (`.github/workflows/docker.yml`).
+- **Client integration docs** for Claude Code/Desktop, Cursor, Cline, VS Code, Dify,
+  Open WebUI, plus the legacy SSE endpoint.
+
+### Changed
+
+- `/docs` and `/openapi.json` are **off by default** (the console covers every operation).
+  Enable with `--docs` or `OPENAPI_MCP_HUB_DOCS=1`. This is the only behavior change that
+  can affect an existing deployment.
+- `GET /services/{name}` now includes `annotations` per tool.
+
 ## 0.4.1 (2026-10-26)
 
 First release on PyPI. No behavior changes — packaging, docs and metadata only.
