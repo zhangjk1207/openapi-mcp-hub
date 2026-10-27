@@ -169,6 +169,35 @@ Legacy SSE clients (older than Streamable HTTP) use the compatibility endpoint w
 GET http://localhost:20033/mcp/<service>/sse
 ```
 
+### stdio-only clients — use the built-in bridge
+
+Some clients can only spawn a local process and talk JSON-RPC over stdin/stdout. The same package
+ships a bridge subcommand (`uvx openapi-mcp-hub bridge …`, or `openapi-mcp-hub bridge …` from a
+local install) that pipes stdio straight to a running gateway endpoint:
+
+```json
+{
+  "mcpServers": {
+    "petstore": {
+      "command": "uvx",
+      "args": [
+        "openapi-mcp-hub", "bridge",
+        "--url", "http://localhost:20033/mcp/petstore",
+        "--header", "X-Api-Key=psk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ]
+    }
+  }
+}
+```
+
+The bridge is protocol plumbing only: it forwards every message unchanged, keeps `Mcp-Session-Id`
+sticky, derives the `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` headers from the client's own
+request, and turns transport-level failures (401, unreachable gateway) into JSON-RPC errors with an
+actionable `data.hint`. It does not cache, rewrite or re-implement anything, and it is not needed
+when the client can speak Streamable HTTP directly.
+
+<!-- mcp-name: io.github.zhangjk1207/openapi-mcp-hub -->
+
 Verify from the shell without any client:
 
 ```bash
@@ -307,7 +336,7 @@ SSRF allowlist, all inside a single process.
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -q          # 266 pass; 22 opt-in integration tests skip without PG/MySQL DSNs
+pytest tests/ -q          # 279 pass; 22 opt-in integration tests skip without PG/MySQL DSNs
 ```
 
 ## License

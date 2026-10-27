@@ -8,7 +8,7 @@ OpenAPI → MCP 网关。起一个服务（比如 `localhost:20033`），POST �
 
 网关根路径带一个控制台，单文件静态页，没有构建链和外部资源。能表单注册（带预检）、看服务列表和详情、健康探测、调用日志、轮换 key。内网环境直接用。
 
-> 当前版本 v0.6.0，266 项测试通过。怎么用看 [USAGE.md](USAGE.md)，英文文档 [README.md](README.md)。
+> 当前版本 v0.6.1，279 项测试通过。怎么用看 [USAGE.md](USAGE.md)，英文文档 [README.md](README.md)。
 
 ![demo](docs/demo.gif)
 
@@ -85,7 +85,7 @@ claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
 
 ```bash
 pip install -e ".[dev]"     # pytest/pytest-asyncio/respx 等一起装上
-python -m pytest tests/      # 266 个用例：单测 + respx mock + e2e（真实 uvicorn 双服务 + MCP 客户端）
+python -m pytest tests/      # 279 个用例：单测 + respx mock + e2e（真实 uvicorn 双服务 + MCP 客户端）
 ```
 
 适配说明：基于 mcp SDK 2.x（2.3+）。lowlevel `Server` 构造器注入 `on_list_tools`/`on_call_tool` 回调，types 是 snake_case，入参校验 SDK 2.x 不再内置，网关用 jsonschema 按 inputSchema 自己做。运行环境建议项目独立 venv（`python -m venv .venv && .venv/bin/pip install -e ".[dev]"`），不碰机器上的共享环境。
@@ -189,6 +189,32 @@ max_tools/service: 100
 ```
 GET http://localhost:20033/mcp/<服务名>/sse
 ```
+
+### 只能读 stdio 的客户端——用内置桥
+
+有些客户端只会 spawn 本地进程、用 stdin/stdout 说 JSON-RPC。同一个包里带了一个 `bridge`
+子命令（`uvx openapi-mcp-hub bridge …`，或本地安装后的 `openapi-mcp-hub bridge …`），
+把 stdio 原样接到运行中的网关端点上：
+
+```json
+{
+  "mcpServers": {
+    "petstore": {
+      "command": "uvx",
+      "args": [
+        "openapi-mcp-hub", "bridge",
+        "--url", "http://localhost:20033/mcp/petstore",
+        "--header", "X-Api-Key=psk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ]
+    }
+  }
+}
+```
+
+桥只做协议搬运：消息原样转发，保持 `Mcp-Session-Id` 粘滞，从客户端自己的请求推导
+`MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` 头，并把传输层失败（401、网关不可达）
+翻译成带 `data.hint` 的 JSON-RPC 错误。**不缓存、不改写、不重复实现任何语义**，
+客户端能直接说 Streamable HTTP 时完全不需要它。
 
 ### 常驻部署（无 Docker）
 
@@ -577,6 +603,7 @@ openapi-mcp-hub/
 | v0.4.0 | JWT 数据面认证（OAuth 2.1 resource server）、tool poisoning 漂移 diff | ✅ 177 项测试通过 |
 | v0.5.0 | 工具安全标注、描述压缩、可自纠正错误、CLI 参数、多架构镜像 | ✅ 247 项测试通过 |
 | v0.6.0 | 渐进式工具发现（search_tools + advertise limit）、`ttlMs`/`cacheScope`、确定性顺序 | ✅ 266 项测试通过 |
+| v0.6.1 | stdio 桥（只吃 stdio 的客户端 + 官方 Registry 收录前置） | ✅ 279 项测试通过 |
 | v0.5.0 | 面向 agent 的工具质量：安全标注、描述/schema 压缩、可自纠正错误提示、CLI 参数、多架构镜像 | ✅ 247 项测试通过 |
 
 往后：官方 MCP registry 发布、工具语义搜索/路由（工具很多时让 agent 只看到需要的那几个）、控制台的 jwt 配置界面。

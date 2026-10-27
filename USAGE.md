@@ -225,6 +225,24 @@ claude mcp add --transport http petstore http://localhost:20033/mcp/petstore \
 }
 ```
 
+**只能跑 stdio 的客户端**（只吃本地进程 + stdin/stdout 的那些）用包里自带的桥：
+
+```json
+{
+  "mcpServers": {
+    "petstore": {
+      "command": "uvx",
+      "args": ["openapi-mcp-hub", "bridge",
+               "--url", "http://localhost:20033/mcp/petstore",
+               "--header", "X-Api-Key=psk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+    }
+  }
+}
+```
+
+桥只转协议不做业务：原样转发消息、保持会话 id、按客户端请求推导协议版本头，
+并把网关的 401/不可达翻译成带 `data.hint` 的 JSON-RPC 错误。能直连 HTTP 的客户端不需要它。
+
 **Dify**：工具 → MCP 服务器 → 填端点 URL + 自定义头 `X-Api-Key`。
 **Open WebUI**：设置 → 工具 → 添加 MCP 服务器 → 填 URL + header。
 

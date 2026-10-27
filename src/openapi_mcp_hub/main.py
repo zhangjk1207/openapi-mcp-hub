@@ -209,6 +209,13 @@ def main(argv: list[str] | None = None) -> None:  # console_script 入口：open
 
     import uvicorn
 
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # 子命令：bridge 不启动网关，只把 stdio 转发到已有网关
+    if argv and argv[0] == "bridge":
+        from .bridge import run_cli
+
+        raise SystemExit(run_cli(argv[1:]))
+
     parser = _build_parser()
     args = parser.parse_args(argv)
 

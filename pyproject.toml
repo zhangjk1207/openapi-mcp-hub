@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openapi-mcp-hub"
-version = "0.6.0"
+version = "0.6.1"
 description = "Turn any OpenAPI spec — or a live PostgreSQL/MySQL database — into production-ready MCP endpoints. One process, one port, zero code."
 readme = "README.md"
 requires-python = ">=3.10"

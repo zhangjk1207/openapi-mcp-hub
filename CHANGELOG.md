@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.1 (2026-10-26)
+
+stdio bridge, so the gateway is reachable from clients that can only spawn a local process — and so
+the official MCP Registry, which only accepts `transport: stdio` for PyPI packages, can list it
+truthfully. No behaviour change for HTTP clients; nothing new is required to run the gateway.
+
+### Added
+
+- **`openapi-mcp-hub bridge --url … [--header K=V]…`** — a stdio ↔ HTTP bridge in the same wheel.
+  Forwards JSON-RPC unchanged, keeps `Mcp-Session-Id` sticky, derives `MCP-Protocol-Version` /
+  `Mcp-Method` / `Mcp-Name` from the client's own request, handles both `application/json` and
+  `text/event-stream` responses, and converts transport failures (401, 404, unreachable) into
+  JSON-RPC errors carrying `data.hint`. No caching, no rewriting, no second implementation of the
+  protocol. Also runnable as `python -m openapi_mcp_hub.bridge`.
+- `mcp-name: io.github.zhangjk1207/openapi-mcp-hub` marker in the README (inside an HTML comment),
+  which is how the official MCP Registry verifies PyPI package ownership.
+
+### Tests
+
+- 279 passing (+13: header derivation, SSE parsing, response selection, 401 → actionable hint,
+  malformed stdin, and an end-to-end test that drives a real bridge subprocess against a real
+  gateway and mock upstream).
+
 ## 0.6.0 (2026-10-26)
 
 Progressive tool discovery: the gateway stops flooding the model's context window. No breaking
